@@ -20,6 +20,7 @@ backstage/.env
 .terraform/
 *.tfstate
 *.tfstate.backup
+*.tfstate.*.backup
 .terraform.lock.hcl
 *.tfvars
 !*.tfvars.example
