@@ -14,7 +14,8 @@ cluster-down:
 	k3d cluster delete $(CLUSTER_NAME)
 
 build:
-	docker build -t $(IMAGE_NAME) ./backstage
+	cd backstage && yarn install --immutable && yarn tsc && yarn build:backend
+	docker build -t $(IMAGE_NAME) -f backstage/packages/backend/Dockerfile backstage/
 	k3d image import $(IMAGE_NAME) -c $(CLUSTER_NAME)
 
 deploy:
