@@ -1,9 +1,9 @@
-.PHONY: all cluster-up cluster-down build deploy destroy
+.PHONY: all cluster-up cluster-down build deploy argocd-bootstrap argocd-ui destroy
 
 CLUSTER_NAME = personal-idp
 IMAGE_NAME   = backstage:local
 
-all: cluster-up build deploy
+all: cluster-up build deploy argocd-bootstrap
 
 cluster-up:
 	k3d cluster create $(CLUSTER_NAME) \
@@ -20,6 +20,16 @@ build:
 
 deploy:
 	cd terraform && terraform apply -auto-approve
+
+# Register the backstage ArgoCD Application after ArgoCD CRDs are available.
+# Run once after `make deploy` on a fresh cluster.
+argocd-bootstrap:
+	kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=120s
+	kubectl apply -f k8s/argocd/backstage-application.yaml
+
+# Open the ArgoCD UI via port-forward (ArgoCD runs on port 8080 internally).
+argocd-ui:
+	kubectl port-forward svc/argocd-server -n argocd 8088:80
 
 destroy:
 	cd terraform && terraform destroy -auto-approve

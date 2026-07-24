@@ -1,4 +1,4 @@
 output "service_name" {
-  description = "Name of the Backstage Kubernetes service"
-  value       = kubernetes_service.backstage.metadata[0].name
+  description = "Name of the Backstage Kubernetes service (managed by ArgoCD)"
+  value       = "backstage"
 }
