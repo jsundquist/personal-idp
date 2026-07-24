@@ -132,7 +132,34 @@ catalog:
     #     - allow: [User, Group]
 
 kubernetes:
-  # see https://backstage.io/docs/features/kubernetes/configuration for kubernetes configuration options
+  frontend:
+    podLookupMethod: annotation
+  serviceLocatorMethod:
+    type: multiTenant
+  clusterLocatorMethods:
+    - type: config
+      clusters:
+        - url: https://kubernetes.default.svc
+          name: personal-idp
+          authProvider: serviceAccount
+          skipTLSVerify: true
+          skipMetricsLookup: false
+
+kubernetesIngestor:
+  enabled: true
+  allowedClusterNames:
+    - personal-idp
+  defaultOwner: guests
+  components:
+    enabled: true
+    excludedNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+  crossplane:
+    enabled: false
+  kro:
+    enabled: false
 
 # see https://backstage.io/docs/permissions/getting-started for more on the permission framework
 permission:

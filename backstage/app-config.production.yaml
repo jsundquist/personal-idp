@@ -27,6 +27,20 @@ auth:
     guest:
       dangerouslyAllowOutsideDevelopment: true
 
+kubernetes:
+  frontend:
+    podLookupMethod: annotation
+  serviceLocatorMethod:
+    type: multiTenant
+  clusterLocatorMethods:
+    - type: config
+      clusters:
+        - url: https://kubernetes.default.svc
+          name: personal-idp
+          authProvider: serviceAccount
+          skipTLSVerify: true
+          skipMetricsLookup: false
+
 catalog:
   # Overrides the default list locations from app-config.yaml as these contain example data.
   # See https://backstage.io/docs/features/software-catalog/#adding-components-to-the-catalog for more details
