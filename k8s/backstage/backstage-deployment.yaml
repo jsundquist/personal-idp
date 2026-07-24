@@ -16,6 +16,7 @@ spec:
         app: backstage
       annotations:
         backstage.io/kubernetes-id: backstage
+        argocd/app-name: backstage
     spec:
       serviceAccountName: backstage
       containers:
