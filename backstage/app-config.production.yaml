@@ -6,6 +6,8 @@ backend:
   # Port 8080 is forwarded by k3d to the in-cluster LoadBalancer on port 80 → 7007.
   baseUrl: http://localhost:8080
   listen: ':7007'
+  csp:
+    connect-src: ["'self'"]
 
   # config options: https://node-postgres.com/apis/client
   database:

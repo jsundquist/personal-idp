@@ -30,6 +30,8 @@ spec:
                 name: backstage-postgres-credentials
             - secretRef:
                 name: backstage-argocd-credentials
+            - secretRef:
+                name: backstage-backend-credentials
           resources:
             requests:
               cpu: 200m
@@ -37,9 +39,20 @@ spec:
             limits:
               cpu: 500m
               memory: 1Gi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
           readinessProbe:
             httpGet:
               path: /healthcheck
               port: 7007
             initialDelaySeconds: 30
             periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 7007
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 3

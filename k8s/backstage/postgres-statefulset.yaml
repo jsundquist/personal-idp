@@ -23,9 +23,14 @@ spec:
           image: postgres:16
           ports:
             - containerPort: 5432
+          securityContext:
+            allowPrivilegeEscalation: false
           env:
             - name: POSTGRES_USER
-              value: backstage
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-postgres-credentials
+                  key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:

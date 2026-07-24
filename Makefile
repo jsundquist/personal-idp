@@ -32,4 +32,4 @@ argocd-ui:
 	kubectl port-forward svc/argocd-server -n argocd 8088:80
 
 destroy:
-	cd terraform && terraform destroy -auto-approve
+	cd terraform && terraform destroy
