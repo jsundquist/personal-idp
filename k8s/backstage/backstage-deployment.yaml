@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backstage
+  namespace: backstage
+  labels:
+    app: backstage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backstage
+  template:
+    metadata:
+      labels:
+        app: backstage
+      annotations:
+        backstage.io/kubernetes-id: backstage
+    spec:
+      serviceAccountName: backstage
+      containers:
+        - name: backstage
+          image: backstage:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 7007
+          envFrom:
+            - secretRef:
+                name: backstage-postgres-credentials
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 7007
+            initialDelaySeconds: 30
+            periodSeconds: 10
