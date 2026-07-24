@@ -27,6 +27,8 @@ spec:
           envFrom:
             - secretRef:
                 name: backstage-postgres-credentials
+            - secretRef:
+                name: backstage-argocd-credentials
           resources:
             requests:
               cpu: 200m

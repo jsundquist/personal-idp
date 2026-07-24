@@ -27,6 +27,22 @@ auth:
     guest:
       dangerouslyAllowOutsideDevelopment: true
 
+proxy:
+  endpoints:
+    '/argocd/api':
+      target: http://argocd-server.argocd.svc.cluster.local/api/v1/
+      changeOrigin: true
+      headers:
+        Cookie: ''
+
+argocd:
+  authToken: ${ARGOCD_AUTH_TOKEN}
+  appLocatorMethods:
+    - type: 'config'
+      instances:
+        - name: personal-idp
+          url: http://argocd-server.argocd.svc.cluster.local
+
 kubernetes:
   frontend:
     podLookupMethod: annotation

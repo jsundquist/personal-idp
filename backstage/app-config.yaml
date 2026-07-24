@@ -59,12 +59,20 @@ integrations:
     #   token: ${GHE_TOKEN}
 
 proxy:
-  ### Example for how to add a proxy endpoint for the frontend.
-  ### A typical reason to do this is to handle HTTPS and CORS for internal services.
-  # endpoints:
-  #   '/test':
-  #     target: 'https://example.com'
-  #     changeOrigin: true
+  endpoints:
+    '/argocd/api':
+      target: http://argocd-server.argocd.svc.cluster.local/api/v1/
+      changeOrigin: true
+      headers:
+        Cookie: ''
+
+argocd:
+  authToken: ${ARGOCD_AUTH_TOKEN}
+  appLocatorMethods:
+    - type: 'config'
+      instances:
+        - name: personal-idp
+          url: http://argocd-server.argocd.svc.cluster.local
 
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration
 # Note: After experimenting with basic setup, use CI/CD to generate docs
