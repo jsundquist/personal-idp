@@ -59,6 +59,9 @@ backend.add(import('@backstage/plugin-search-backend-module-techdocs'));
 // kubernetes plugin
 backend.add(import('@backstage/plugin-kubernetes-backend'));
 
+// kubernetes ingestor — auto-discovers k8s workloads as catalog entities
+backend.add(import('@terasky/backstage-plugin-kubernetes-ingestor'));
+
 // user settings plugin
 backend.add(import('@backstage/plugin-user-settings-backend'));
 
