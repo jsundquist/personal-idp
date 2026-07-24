@@ -1,6 +1,6 @@
 output "service_host" {
   description = "In-cluster DNS hostname for PostgreSQL"
-  value       = "postgres-postgresql.${var.namespace}.svc.cluster.local"
+  value       = "postgres.${var.namespace}.svc.cluster.local"
 }
 
 output "service_port" {

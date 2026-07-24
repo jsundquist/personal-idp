@@ -94,6 +94,33 @@ resource "kubernetes_service" "backstage" {
       target_port = 7007
     }
 
-    type = "LoadBalancer"
+    type = "ClusterIP"
+  }
+}
+
+resource "kubernetes_ingress_v1" "backstage" {
+  metadata {
+    name      = "backstage"
+    namespace = var.namespace
+  }
+
+  spec {
+    rule {
+      http {
+        path {
+          path      = "/"
+          path_type = "Prefix"
+
+          backend {
+            service {
+              name = kubernetes_service.backstage.metadata[0].name
+              port {
+                number = 80
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
