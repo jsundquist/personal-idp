@@ -21,3 +21,11 @@ module "backstage" {
 
   depends_on = [module.postgres]
 }
+
+module "argocd" {
+  source      = "./modules/argocd"
+  repo_url    = var.repo_url
+  app_namespace = kubernetes_namespace.backstage.metadata[0].name
+
+  depends_on = [kubernetes_namespace.backstage]
+}

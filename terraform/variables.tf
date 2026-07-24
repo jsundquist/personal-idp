@@ -9,3 +9,9 @@ variable "backstage_namespace" {
   type        = string
   default     = "backstage"
 }
+
+variable "repo_url" {
+  description = "GitHub URL of this repo, used by ArgoCD to pull manifests"
+  type        = string
+  default     = "https://github.com/jsundquist/personal-idp.git"
+}
