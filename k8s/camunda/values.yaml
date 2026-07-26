@@ -1,0 +1,93 @@
+# Trimmed values for the official Camunda 8 chart (camunda/camunda-platform 11.12.3 → Camunda 8.6.39).
+# Goal: the minimal, no-auth engine that matches Branchline's docker-compose stack, sized for a
+# local k3d cluster. Anything not set here keeps the chart default.
+#
+# Consumed by k8s/argocd/camunda-application.yaml (ArgoCD multi-source: chart from helm.camunda.io,
+# these values from this repo). Regenerate the full default set with:
+#   helm show values camunda/camunda-platform --version 11.12.3
+
+global:
+  identity:
+    auth:
+      # false => all services use built-in basic-auth (default demo/demo user) instead of
+      # Keycloak/OIDC. This is what lets us drop Identity + Keycloak entirely for local use.
+      enabled: false
+  # global.elasticsearch.enabled defaults true — Zeebe's ES exporter and Operate/Tasklist are
+  # auto-wired to the bundled Elasticsearch below, so no manual exporter env is needed.
+
+# --- Components we do NOT run locally (all default to enabled except the two already off) ---
+identity:
+  enabled: false          # not needed once auth is disabled
+identityKeycloak:
+  enabled: false          # no Keycloak => no bundled Postgres for it either
+optimize:
+  enabled: false          # analytics, enterprise-oriented; not needed
+connectors:
+  enabled: false          # out-of-the-box connectors; add later if a workflow needs them
+webModeler:
+  enabled: false          # already off by default; keep explicit
+console:
+  enabled: false          # already off by default; keep explicit
+
+# --- Core engine: single broker, single partition (no HA on a laptop) ---
+zeebe:
+  clusterSize: "1"
+  partitionCount: "1"
+  replicationFactor: "1"
+  resources:
+    requests:
+      cpu: 400m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+zeebeGateway:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 400Mi
+    limits:
+      cpu: 400m
+      memory: 800Mi
+
+operate:
+  enabled: true
+  resources:
+    requests:
+      cpu: 300m
+      memory: 400Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+tasklist:
+  enabled: true
+  resources:
+    requests:
+      cpu: 300m
+      memory: 400Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# --- Bundled Elasticsearch: single node, small heap (chart default is a 3-node, 1Gi-heap cluster) ---
+elasticsearch:
+  enabled: true
+  master:
+    replicaCount: 1
+    # Chart default is "hard" anti-affinity across master pods; irrelevant at 1 replica, cleared so
+    # nothing blocks scheduling on the small k3d cluster.
+    podAntiAffinityPreset: ""
+    masterOnly: false       # the single node is both master and data
+    heapSize: 512m
+    persistence:
+      size: 8Gi
+    resources:
+      requests:
+        cpu: 300m
+        memory: 1Gi
+      limits:
+        cpu: 1000m
+        memory: 1536Mi

@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: camunda
+  namespace: argocd
+spec:
+  project: default
+  # Multi-source: the chart is pulled from Camunda's Helm repo, while the values file is read
+  # from this git repo (the `$values` ref below). This keeps our config version-controlled and
+  # diffable instead of inlined into the Application spec.
+  sources:
+    - repoURL: https://helm.camunda.io
+      chart: camunda-platform
+      targetRevision: 11.12.3 # Camunda 8.6.39
+      helm:
+        valueFiles:
+          - $values/k8s/camunda/values.yaml
+    - repoURL: https://github.com/jsundquist/personal-idp.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: camunda
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # Camunda's rendered resources carry large annotations; server-side apply avoids the
+      # kubectl "metadata.annotations: Too long" (last-applied-configuration) failure.
+      - ServerSideApply=true

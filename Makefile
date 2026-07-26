@@ -1,4 +1,4 @@
-.PHONY: all cluster-up cluster-down build deploy argocd-bootstrap argocd-ui destroy
+.PHONY: all cluster-up cluster-down build deploy argocd-bootstrap argocd-ui camunda-bootstrap operate-ui tasklist-ui destroy
 
 CLUSTER_NAME = personal-idp
 IMAGE_NAME   = backstage:local
@@ -30,6 +30,20 @@ argocd-bootstrap:
 # Open the ArgoCD UI via port-forward (ArgoCD runs on port 8080 internally).
 argocd-ui:
 	kubectl port-forward svc/argocd-server -n argocd 8088:80
+
+# Register the Camunda ArgoCD Application (official camunda-platform Helm chart, trimmed for local).
+# Run once after ArgoCD is available; ArgoCD then syncs the stack into the `camunda` namespace.
+camunda-bootstrap:
+	kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=120s
+	kubectl apply -f k8s/argocd/camunda-application.yaml
+
+# Open the Camunda Operate UI (workflow instances) via port-forward. Login: demo / demo.
+operate-ui:
+	kubectl port-forward svc/camunda-operate -n camunda 8081:80
+
+# Open the Camunda Tasklist UI (user tasks) via port-forward. Login: demo / demo.
+tasklist-ui:
+	kubectl port-forward svc/camunda-tasklist -n camunda 8082:80
 
 destroy:
 	cd terraform && terraform destroy
