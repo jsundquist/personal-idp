@@ -1,5 +1,8 @@
 .PHONY: all cluster-up cluster-down build deploy argocd-bootstrap argocd-ui camunda-bootstrap operate-ui tasklist-ui destroy
 
+# nvm is a shell function, so the host-side build steps must run under bash (not /bin/sh).
+SHELL := /bin/bash
+
 CLUSTER_NAME = personal-idp
 IMAGE_NAME   = backstage:local
 
@@ -13,8 +16,14 @@ cluster-up:
 cluster-down:
 	k3d cluster delete $(CLUSTER_NAME)
 
+# The host-side yarn steps must run under Node 24 (backstage/.nvmrc); the default
+# system node (e.g. Homebrew 26) breaks the native isolated-vm build. Source nvm and
+# `nvm use` (reads .nvmrc after cd) so the build is correct regardless of the caller's
+# default node; `nvm install` covers a machine that doesn't have 24 yet.
 build:
-	cd backstage && yarn install --immutable && yarn tsc && yarn build:backend
+	export NVM_DIR="$$HOME/.nvm" && . "$$NVM_DIR/nvm.sh" && cd backstage && \
+	  { nvm use || nvm install; } && \
+	  yarn install --immutable && yarn tsc && yarn build:backend
 	docker build -t $(IMAGE_NAME) -f backstage/packages/backend/Dockerfile backstage/
 	k3d image import $(IMAGE_NAME) -c $(CLUSTER_NAME)
 
