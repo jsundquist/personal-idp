@@ -27,6 +27,3 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      # Camunda's rendered resources carry large annotations; server-side apply avoids the
-      # kubectl "metadata.annotations: Too long" (last-applied-configuration) failure.
-      - ServerSideApply=true
