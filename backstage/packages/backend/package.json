@@ -45,6 +45,7 @@
     "@backstage/plugin-signals-backend": "^0.3.17",
     "@backstage/plugin-techdocs-backend": "^2.2.2",
     "@backstage/plugin-user-settings-backend": "^0.4.5",
+    "@internal/backstage-plugin-branchline-backend": "^0.1.0",
     "@roadiehq/backstage-plugin-argo-cd-backend": "^4.8.0",
     "@terasky/backstage-plugin-kubernetes-ingestor": "^4.0.0",
     "app": "link:../app",

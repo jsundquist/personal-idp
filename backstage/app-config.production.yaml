@@ -59,6 +59,15 @@ kubernetes:
           skipTLSVerify: true
           skipMetricsLookup: false
 
+# In-cluster Camunda service DNS (backstage ns → camunda ns). Overrides the localhost
+# port-forward URLs from app-config.yaml; username/password are inherited from the base config.
+# Operate/Tasklist web ports are 80; the Zeebe REST v2 gateway is 8080.
+branchline:
+  camunda:
+    operateBaseUrl: http://camunda-operate.camunda.svc.cluster.local
+    tasklistBaseUrl: http://camunda-tasklist.camunda.svc.cluster.local
+    zeebeBaseUrl: http://camunda-zeebe-gateway.camunda.svc.cluster.local:8080
+
 catalog:
   # Overrides the default list locations from app-config.yaml as these contain example data.
   # See https://backstage.io/docs/features/software-catalog/#adding-components-to-the-catalog for more details

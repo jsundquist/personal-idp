@@ -178,3 +178,17 @@ permission:
 mcpActions:
   name: 'My Company Backstage' # defaults to "backstage"
   description: 'Tools for managing your software catalog, creating new services from templates, and exploring your developer portal' # optional
+
+# Branchline workflow plugin — talks to the in-cluster Camunda 8 engine over REST.
+# Base URLs below target local `make *-ui` port-forwards for local `yarn start` dev;
+# app-config.production.yaml overrides them with in-cluster service DNS.
+# The engine runs no-auth (global.identity.auth.enabled: false) → basic/cookie auth as demo/demo.
+# username is non-sensitive; the password comes from the CAMUNDA_PASSWORD env var
+# (backstage-camunda-credentials secret), never inlined.
+branchline:
+  camunda:
+    operateBaseUrl: http://localhost:8081
+    tasklistBaseUrl: http://localhost:8082
+    zeebeBaseUrl: http://localhost:8080
+    username: demo
+    password: ${CAMUNDA_PASSWORD}

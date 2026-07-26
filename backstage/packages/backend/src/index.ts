@@ -65,6 +65,9 @@ backend.add(import('@roadiehq/backstage-plugin-argo-cd-backend'));
 // kubernetes ingestor — auto-discovers k8s workloads as catalog entities
 backend.add(import('@terasky/backstage-plugin-kubernetes-ingestor'));
 
+// branchline plugin — Camunda workflow orchestration (list/start/inspect)
+backend.add(import('@internal/backstage-plugin-branchline-backend'));
+
 // user settings plugin
 backend.add(import('@backstage/plugin-user-settings-backend'));
 

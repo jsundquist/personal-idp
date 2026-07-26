@@ -32,6 +32,8 @@ spec:
                 name: backstage-argocd-credentials
             - secretRef:
                 name: backstage-backend-credentials
+            - secretRef:
+                name: backstage-camunda-credentials
           resources:
             requests:
               cpu: 200m
