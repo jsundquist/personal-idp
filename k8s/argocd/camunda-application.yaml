@@ -21,6 +21,23 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: camunda
+  # ArgoCD v2.14's bundled schema predates Kubernetes 1.35's `status.terminatingReplicas`
+  # field, which breaks its structured-merge diff. Strip that field during diff
+  # normalization so comparison (and therefore auto-sync/selfHeal) works. Remove once
+  # ArgoCD is upgraded to a release whose schema knows the field.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status/terminatingReplicas
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /status/terminatingReplicas
+    - group: apps
+      kind: ReplicaSet
+      jsonPointers:
+        - /status/terminatingReplicas
   syncPolicy:
     automated:
       prune: true
