@@ -17,4 +17,8 @@ export type {
   FeedbackComment,
   FeedbackItem,
   FeedbackCounts,
+  AuditEvent,
 } from '@internal/backstage-plugin-branchline-common';
+
+// AuditEventType is a runtime enum — re-export as a value, not a type.
+export { AuditEventType } from '@internal/backstage-plugin-branchline-common';

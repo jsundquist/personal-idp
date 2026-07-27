@@ -106,6 +106,8 @@ export interface WorkflowInstance {
   owningGroup: string;
   entityRef?: string;
   status: WorkflowStatus;
+  /** Entity ref of the user who started the workflow (captured at start) */
+  createdBy?: string;
   createdAt: string;
   updatedAt: string;
   completedPhases?: number;
@@ -167,4 +169,31 @@ export interface FeedbackItem {
 export interface FeedbackCounts {
   open: number;
   total: number;
+}
+
+// ── Audit trail ──────────────────────────────────────────────────────────────
+// A time-sorted timeline of a workflow's milestones, assembled from
+// workflow_instances, task_actions, and feedback_items. Milestones only —
+// individual feedback comments are NOT audit events.
+
+export enum AuditEventType {
+  WorkflowStarted = 'workflow-started',
+  WorkflowCompleted = 'workflow-completed',
+  WorkflowCancelled = 'workflow-cancelled',
+  TaskCompleted = 'task-completed',
+  TaskSkipped = 'task-skipped',
+  FeedbackCreated = 'feedback-created',
+  FeedbackResolved = 'feedback-resolved',
+  FeedbackException = 'feedback-exception',
+}
+
+export interface AuditEvent {
+  type: AuditEventType;
+  timestamp: string;
+  /** User/group entity ref; the UI renders parseEntityRef(actor).name */
+  actor?: string;
+  /** BPMN flowNodeId — the UI maps this to a task label via parallelBlocks */
+  taskId?: string;
+  /** Skip reason / exception reason / feedback body, where applicable */
+  detail?: string;
 }

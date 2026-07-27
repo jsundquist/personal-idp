@@ -27,6 +27,7 @@ export class BranchlineDatabase {
   async createInstance(
     req: StartWorkflowRequest,
     camundaKey: string,
+    createdBy?: string,
   ): Promise<WorkflowInstance> {
     const id = uuidv4();
     const now = new Date().toISOString();
@@ -44,6 +45,7 @@ export class BranchlineDatabase {
       description: req.description ?? null,
       owning_group: req.owningGroup,
       entity_ref: req.entityRef ?? null,
+      created_by: createdBy ?? null,
       status: 'active',
       created_at: now,
       updated_at: now,
@@ -219,6 +221,15 @@ export class BranchlineDatabase {
     };
   }
 
+  async listFeedbackForInstance(instanceId: string): Promise<FeedbackItem[]> {
+    // Milestones only — the audit trail does not need comment threads, so this
+    // returns items with an empty comments array (avoids the extra query).
+    const items = await this.db('feedback_items')
+      .where({ instance_id: instanceId })
+      .orderBy('created_at', 'asc');
+    return items.map(row => this.rowToFeedback(row, []));
+  }
+
   async feedbackCountsForInstance(
     instanceId: string,
   ): Promise<Record<string, FeedbackCounts>> {
@@ -324,6 +335,7 @@ export class BranchlineDatabase {
       owningGroup: row.owning_group as string,
       entityRef: (row.entity_ref as string | null) ?? undefined,
       status: row.status as WorkflowInstance['status'],
+      createdBy: (row.created_by as string | null) ?? undefined,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
     };

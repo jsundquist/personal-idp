@@ -104,6 +104,43 @@ describe('BranchlineDatabase — feedback', () => {
     expect(counts).toEqual({ open: 0, total: 2 });
   });
 
+  it('persists created_by and returns it across all tasks via listFeedbackForInstance', async () => {
+    const knex = await databases.init('SQLITE_3');
+    const db = await BranchlineDatabase.create(knex as any);
+    const instance = await db.createInstance(
+      {
+        definitionId: 'create-backend-api',
+        title: 'Test',
+        owningGroup: 'group:default/platform',
+      },
+      `camunda-${Math.random()}`,
+      'user:default/starter',
+    );
+
+    // created_by round-trips
+    const reloaded = await db.getInstance(instance.id);
+    expect(reloaded.createdBy).toBe('user:default/starter');
+
+    await db.createFeedback({
+      instanceId: instance.id,
+      taskId: 'gate-arch',
+      authorGroup: 'g',
+      author: 'u',
+      body: 'a',
+    });
+    await db.createFeedback({
+      instanceId: instance.id,
+      taskId: 'gate-sec',
+      authorGroup: 'g',
+      author: 'u',
+      body: 'b',
+    });
+
+    const all = await db.listFeedbackForInstance(instance.id);
+    expect(all).toHaveLength(2);
+    expect(all.map(i => i.taskId).sort()).toEqual(['gate-arch', 'gate-sec']);
+  });
+
   it('aggregates counts per task across an instance', async () => {
     const { db, instanceId } = await createDbWithInstance();
     await db.createFeedback({

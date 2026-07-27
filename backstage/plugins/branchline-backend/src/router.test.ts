@@ -12,6 +12,9 @@ const INSTANCE = {
   camundaKey: 'ck-1',
   owningGroup: 'group:default/platform',
   status: 'active',
+  createdBy: 'user:default/starter',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-02T00:00:00.000Z',
 };
 
 function buildApp(overrides?: {
@@ -25,6 +28,7 @@ function buildApp(overrides?: {
     recordAction: jest.fn().mockResolvedValue({ id: 'a1' }),
     feedbackCountsForTask: jest.fn().mockResolvedValue({ open: 0, total: 0 }),
     feedbackCountsForInstance: jest.fn().mockResolvedValue({}),
+    listFeedbackForInstance: jest.fn().mockResolvedValue([]),
     createFeedback: jest.fn().mockResolvedValue({ id: 'fb-1', status: 'open' }),
     getFeedback: jest
       .fn()
@@ -200,6 +204,80 @@ describe('createRouter', () => {
       expect(db.recordAction).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'completed', taskId: 'gate-arch' }),
       );
+    });
+  });
+
+  describe('audit trail', () => {
+    it('assembles milestone events in ascending time order', async () => {
+      const { app } = buildApp({
+        db: {
+          getInstance: jest
+            .fn()
+            .mockResolvedValue({ ...INSTANCE, status: 'completed' }),
+          getActionsForInstance: jest.fn().mockResolvedValue([
+            {
+              taskId: 't1',
+              action: 'completed',
+              actor: 'user:default/dev',
+              occurredAt: '2026-01-01T02:00:00.000Z',
+            },
+          ]),
+          listFeedbackForInstance: jest.fn().mockResolvedValue([
+            {
+              id: 'fb-1',
+              taskId: 't1',
+              author: 'user:default/rev',
+              body: 'Add rate limiting',
+              status: 'resolved',
+              closedBy: 'user:default/rev',
+              closedAt: '2026-01-01T01:30:00.000Z',
+              createdAt: '2026-01-01T01:00:00.000Z',
+            },
+            {
+              id: 'fb-2',
+              taskId: 't1',
+              author: 'user:default/rev',
+              body: 'Nice to have',
+              status: 'exception',
+              closedBy: 'user:default/rev',
+              closedAt: '2026-01-01T01:45:00.000Z',
+              exceptionReason: 'deferred',
+              createdAt: '2026-01-01T01:10:00.000Z',
+            },
+          ]),
+        },
+      });
+
+      const res = await request(app).get('/workflows/wf-1/audit');
+      expect(res.status).toBe(200);
+      const types = res.body.map((e: { type: string }) => e.type);
+      expect(types).toEqual([
+        'workflow-started',
+        'feedback-created',
+        'feedback-created',
+        'feedback-resolved',
+        'feedback-exception',
+        'task-completed',
+        'workflow-completed',
+      ]);
+      // kickoff carries the starter
+      expect(res.body[0]).toMatchObject({
+        type: 'workflow-started',
+        actor: 'user:default/starter',
+      });
+      // exception carries its reason
+      expect(res.body.find((e: { type: string }) => e.type === 'feedback-exception')).toMatchObject({
+        detail: 'deferred',
+      });
+    });
+
+    it('emits no terminal event for an active workflow', async () => {
+      const { app } = buildApp();
+      const res = await request(app).get('/workflows/wf-1/audit');
+      expect(res.status).toBe(200);
+      const types = res.body.map((e: { type: string }) => e.type);
+      expect(types).toEqual(['workflow-started']);
+      expect(types).not.toContain('workflow-completed');
     });
   });
 });

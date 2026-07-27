@@ -57,4 +57,13 @@ describe('BranchlineClient feedback methods', () => {
       exceptionReason: 'accepted risk',
     });
   });
+
+  it('getAuditTrail GETs the audit endpoint', async () => {
+    const { client, fetchMock } = setup([]);
+    await client.getAuditTrail('wf-1');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost/api/branchline/workflows/wf-1/audit',
+      undefined,
+    );
+  });
 });

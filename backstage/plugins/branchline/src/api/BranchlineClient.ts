@@ -9,6 +9,7 @@ import type {
   StartWorkflowRequest,
   FeedbackItem,
   FeedbackComment,
+  AuditEvent,
 } from '../types';
 
 export class BranchlineClient implements BranchlineApi {
@@ -124,5 +125,9 @@ export class BranchlineClient implements BranchlineApi {
         body: JSON.stringify({ status, exceptionReason }),
       },
     );
+  }
+
+  async getAuditTrail(instanceId: string): Promise<AuditEvent[]> {
+    return this.fetch<AuditEvent[]>(`/workflows/${instanceId}/audit`);
   }
 }

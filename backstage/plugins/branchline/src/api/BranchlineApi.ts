@@ -6,6 +6,7 @@ import type {
   FeedbackItem,
   FeedbackComment,
   FeedbackCounts,
+  AuditEvent,
 } from '../types';
 
 export interface TaskFeedback {
@@ -35,6 +36,7 @@ export interface BranchlineApi {
     status: 'resolved' | 'exception',
     exceptionReason?: string,
   ): Promise<FeedbackItem>;
+  getAuditTrail(instanceId: string): Promise<AuditEvent[]>;
 }
 
 export const branchlineApiRef = createApiRef<BranchlineApi>({

@@ -7,6 +7,7 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import CloseIcon from '@mui/icons-material/Close';
 import FeedbackOutlinedIcon from '@mui/icons-material/FeedbackOutlined';
+import HistoryIcon from '@mui/icons-material/History';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LockIcon from '@mui/icons-material/Lock';
@@ -41,6 +42,7 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useNavigate, useParams } from 'react-router-dom';
 import { branchlineApiRef } from '../../api/BranchlineApi';
+import { AuditTrailDialog } from '../../components/AuditTrailDialog';
 import { derivePhaseStatus } from '../../components/ParallelBlock';
 import { FeedbackThread } from '../../components/FeedbackThread';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -416,6 +418,7 @@ export function WorkflowDetailPage() {
   const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
   const [flowOpen, setFlowOpen] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
@@ -634,6 +637,14 @@ export function WorkflowDetailPage() {
                 )}
               </Box>
               <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0, ml: 2 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<HistoryIcon sx={{ fontSize: '14px !important' }} />}
+                  onClick={() => setAuditOpen(true)}
+                >
+                  Audit Trail
+                </Button>
                 <Button
                   size="small"
                   variant="outlined"
@@ -896,6 +907,14 @@ export function WorkflowDetailPage() {
         <WorkflowFlowDialog
           open={flowOpen}
           onClose={() => setFlowOpen(false)}
+          workflow={workflow}
+        />
+      )}
+
+      {workflow && (
+        <AuditTrailDialog
+          open={auditOpen}
+          onClose={() => setAuditOpen(false)}
           workflow={workflow}
         />
       )}

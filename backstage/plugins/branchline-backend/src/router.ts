@@ -8,7 +8,8 @@ import { z } from 'zod/v3';
 import { CamundaClient } from './camunda/CamundaClient';
 import { GroupMembershipChecker } from './catalog/GroupMembershipChecker';
 import { BranchlineDatabase } from './db/BranchlineDatabase';
-import type { FlowGraph, ParallelBlock } from './types';
+import { AuditEventType } from './types';
+import type { AuditEvent, FlowGraph, ParallelBlock } from './types';
 
 const startWorkflowSchema = z.object({
   definitionId: z.string().min(1),
@@ -134,6 +135,10 @@ export function createRouter(opts: {
 
     const { definitionId, title, description, owningGroup, entityRef } = parsed.data;
 
+    // Record who started the workflow (for the audit trail's kickoff event).
+    const credentials = await httpAuth.credentials(req, { allow: ['user'] });
+    const createdBy = credentials.principal.userEntityRef;
+
     let camundaKey: string;
     try {
       const result = await camunda.startInstance({
@@ -150,6 +155,7 @@ export function createRouter(opts: {
     const instance = await db.createInstance(
       { definitionId, title, description, owningGroup, entityRef },
       camundaKey,
+      createdBy,
     );
     res.status(201).json(instance);
   });
@@ -419,6 +425,75 @@ export function createRouter(opts: {
       exceptionReason: parsed.data.exceptionReason,
     });
     res.json(updated);
+  });
+
+  // GET /workflows/:id/audit — time-sorted milestone timeline for the workflow
+  router.get('/workflows/:id/audit', async (req, res) => {
+    await httpAuth.credentials(req, { allow: ['user'] });
+    const instance = await db.getInstance(req.params.id);
+    const [actions, feedback] = await Promise.all([
+      db.getActionsForInstance(instance.id),
+      db.listFeedbackForInstance(instance.id),
+    ]);
+
+    const events: AuditEvent[] = [];
+
+    events.push({
+      type: AuditEventType.WorkflowStarted,
+      timestamp: instance.createdAt,
+      actor: instance.createdBy,
+    });
+
+    for (const a of actions) {
+      events.push({
+        type:
+          a.action === 'skipped'
+            ? AuditEventType.TaskSkipped
+            : AuditEventType.TaskCompleted,
+        timestamp: a.occurredAt,
+        actor: a.actor,
+        taskId: a.taskId,
+        detail: a.skipReason,
+      });
+    }
+
+    for (const f of feedback) {
+      events.push({
+        type: AuditEventType.FeedbackCreated,
+        timestamp: f.createdAt,
+        actor: f.author,
+        taskId: f.taskId,
+        detail: f.body,
+      });
+      if (f.status !== 'open' && f.closedAt) {
+        events.push({
+          type:
+            f.status === 'exception'
+              ? AuditEventType.FeedbackException
+              : AuditEventType.FeedbackResolved,
+          timestamp: f.closedAt,
+          actor: f.closedBy,
+          taskId: f.taskId,
+          detail: f.status === 'exception' ? f.exceptionReason : undefined,
+        });
+      }
+    }
+
+    if (instance.status === 'completed') {
+      events.push({
+        type: AuditEventType.WorkflowCompleted,
+        timestamp: instance.updatedAt,
+      });
+    } else if (instance.status === 'cancelled') {
+      events.push({
+        type: AuditEventType.WorkflowCancelled,
+        timestamp: instance.updatedAt,
+      });
+    }
+
+    // ISO-8601 timestamps sort correctly as strings.
+    events.sort((x, y) => x.timestamp.localeCompare(y.timestamp));
+    res.json(events);
   });
 
   return router;
