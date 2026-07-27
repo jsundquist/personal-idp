@@ -77,6 +77,8 @@ export interface Task {
   skippedBy?: string;
   skippedAt?: string;
   skipReason?: string;
+  /** Approval-gate feedback tallies for this task, if any has been logged */
+  feedbackCounts?: FeedbackCounts;
 }
 
 export interface Step {
@@ -127,4 +129,42 @@ export interface StartWorkflowRequest {
   description?: string;
   owningGroup: string;
   entityRef?: string;
+}
+
+// ── Approval-gate feedback ───────────────────────────────────────────────────
+// A code-review-style feedback layer on any human gate. Branchline application
+// state keyed by (instanceId, taskId) — NOT a Camunda/BPMN concern.
+
+export type FeedbackStatus = 'open' | 'resolved' | 'exception';
+
+export interface FeedbackComment {
+  id: string;
+  feedbackId: string;
+  author: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface FeedbackItem {
+  id: string;
+  instanceId: string;
+  taskId: string;
+  /** The group that logged the feedback (the owning approval team) */
+  authorGroup: string;
+  author: string;
+  body: string;
+  status: FeedbackStatus;
+  /** Set on either close (resolve OR exception); `status` says which */
+  closedBy?: string;
+  closedAt?: string;
+  /** Required only when status === 'exception' */
+  exceptionReason?: string;
+  comments: FeedbackComment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FeedbackCounts {
+  open: number;
+  total: number;
 }

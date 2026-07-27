@@ -1,6 +1,6 @@
 import { HttpAuthService, LoggerService, PermissionsService } from '@backstage/backend-plugin-api';
 import { AuthorizeResult } from '@backstage/plugin-permission-common';
-import { InputError, NotAllowedError } from '@backstage/errors';
+import { ConflictError, InputError, NotAllowedError } from '@backstage/errors';
 import { branchlineWorkflowActPermission } from '@internal/backstage-plugin-branchline-common';
 import express from 'express';
 import Router from 'express-promise-router';
@@ -22,6 +22,26 @@ const skipSchema = z.object({
   reason: z.string().min(1, 'Skip reason is required'),
 });
 
+const feedbackSchema = z.object({
+  body: z.string().min(1, 'Feedback body is required'),
+});
+
+const commentSchema = z.object({
+  body: z.string().min(1, 'Comment body is required'),
+});
+
+const closeFeedbackSchema = z
+  .object({
+    status: z.enum(['resolved', 'exception']),
+    exceptionReason: z.string().optional(),
+  })
+  .refine(
+    d =>
+      d.status !== 'exception' ||
+      (typeof d.exceptionReason === 'string' && d.exceptionReason.trim().length > 0),
+    { message: 'An exception requires a reason', path: ['exceptionReason'] },
+  );
+
 export function createRouter(opts: {
   httpAuth: HttpAuthService;
   db: BranchlineDatabase;
@@ -33,6 +53,24 @@ export function createRouter(opts: {
   const { httpAuth, db, camunda, membership, permissions, logger } = opts;
   const router = Router();
   router.use(express.json());
+
+  // Authorize the "act" permission (owning-group member) on an instance and
+  // return the acting user's entity ref. Used by gate actions + feedback closure.
+  async function authorizeAct(
+    req: express.Request,
+    instanceId: string,
+    deniedMessage: string,
+  ): Promise<string> {
+    const credentials = await httpAuth.credentials(req, { allow: ['user'] });
+    const [decision] = await permissions.authorize(
+      [{ permission: branchlineWorkflowActPermission, resourceRef: instanceId }],
+      { credentials },
+    );
+    if (decision.result !== AuthorizeResult.ALLOW) {
+      throw new NotAllowedError(deniedMessage);
+    }
+    return credentials.principal.userEntityRef;
+  }
 
   // GET /definitions — list Camunda process definitions
   router.get('/definitions', async (_req, res) => {
@@ -140,6 +178,23 @@ export function createRouter(opts: {
       logger.warn(`Failed to build task hierarchy for ${instance.id}`, err as Error);
     }
 
+    // Attach approval-gate feedback tallies to each task (keyed by BPMN flowNodeId).
+    try {
+      const feedbackByTask = await db.feedbackCountsForInstance(instance.id);
+      for (const block of parallelBlocks) {
+        for (const step of block.steps) {
+          for (const task of step.tasks) {
+            const counts = feedbackByTask[task.id];
+            if (counts) {
+              task.feedbackCounts = counts;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn(`Failed to attach feedback counts for ${instance.id}`, err as Error);
+    }
+
     // Auto-complete: if all phases are done and the DB still says active, update it.
     if (instance.status === 'active' && parallelBlocks.length > 0) {
       const allDone = parallelBlocks.every(block =>
@@ -200,6 +255,15 @@ export function createRouter(opts: {
     }
 
     const instance = await db.getInstance(req.params.id);
+
+    // Completion-blocking rule: a gate cannot be completed while it has open
+    // feedback. Every feedback item must be resolved or excepted first.
+    const counts = await db.feedbackCountsForTask(instance.id, req.params.taskId);
+    if (counts.open > 0) {
+      throw new ConflictError(
+        `Cannot complete this task: ${counts.open} open feedback item(s) must be resolved or granted an exception first`,
+      );
+    }
 
     // Resolve the element instance and complete via the appropriate Camunda API.
     // bpmn:userTask elements in Camunda 8.6+ are Camunda user tasks (no jobKey);
@@ -271,6 +335,90 @@ export function createRouter(opts: {
       skipReason: parsed.data.reason,
     });
     res.json(record);
+  });
+
+  // ── Approval-gate feedback ─────────────────────────────────────────────────
+
+  // GET /workflows/:id/tasks/:taskId/feedback — list items + counts for a task
+  router.get('/workflows/:id/tasks/:taskId/feedback', async (req, res) => {
+    // Any authenticated user who can view the workflow may read feedback.
+    await httpAuth.credentials(req, { allow: ['user'] });
+    const [items, counts] = await Promise.all([
+      db.listFeedbackForTask(req.params.id, req.params.taskId),
+      db.feedbackCountsForTask(req.params.id, req.params.taskId),
+    ]);
+    res.json({ items, counts });
+  });
+
+  // POST /workflows/:id/tasks/:taskId/feedback — owning team logs feedback
+  router.post('/workflows/:id/tasks/:taskId/feedback', async (req, res) => {
+    const parsed = feedbackSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new InputError(parsed.error.toString());
+    }
+    const author = await authorizeAct(
+      req,
+      req.params.id,
+      'You do not have permission to add feedback on this workflow',
+    );
+    const instance = await db.getInstance(req.params.id);
+    const item = await db.createFeedback({
+      instanceId: instance.id,
+      taskId: req.params.taskId,
+      authorGroup: instance.owningGroup,
+      author,
+      body: parsed.data.body,
+    });
+    res.status(201).json(item);
+  });
+
+  // POST /workflows/:id/feedback/:feedbackId/comments — any participant comments
+  router.post('/workflows/:id/feedback/:feedbackId/comments', async (req, res) => {
+    const parsed = commentSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new InputError(parsed.error.toString());
+    }
+    const credentials = await httpAuth.credentials(req, { allow: ['user'] });
+    const author = credentials.principal.userEntityRef;
+
+    const feedback = await db.getFeedback(req.params.feedbackId);
+    if (feedback.instanceId !== req.params.id) {
+      throw new InputError('Feedback item does not belong to this workflow');
+    }
+    const comment = await db.addComment({
+      feedbackId: feedback.id,
+      author,
+      body: parsed.data.body,
+    });
+    res.status(201).json(comment);
+  });
+
+  // PATCH /workflows/:id/feedback/:feedbackId — resolve / grant exception (owning team)
+  router.patch('/workflows/:id/feedback/:feedbackId', async (req, res) => {
+    const parsed = closeFeedbackSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new InputError(parsed.error.toString());
+    }
+    const closedBy = await authorizeAct(
+      req,
+      req.params.id,
+      'You do not have permission to close feedback on this workflow',
+    );
+
+    const feedback = await db.getFeedback(req.params.feedbackId);
+    if (feedback.instanceId !== req.params.id) {
+      throw new InputError('Feedback item does not belong to this workflow');
+    }
+    if (feedback.status !== 'open') {
+      throw new ConflictError(`Feedback item is already ${feedback.status}`);
+    }
+    const updated = await db.closeFeedback({
+      feedbackId: feedback.id,
+      status: parsed.data.status,
+      closedBy,
+      exceptionReason: parsed.data.exceptionReason,
+    });
+    res.json(updated);
   });
 
   return router;

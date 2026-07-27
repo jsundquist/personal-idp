@@ -6,6 +6,7 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import CancelIcon from '@mui/icons-material/Cancel';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import CloseIcon from '@mui/icons-material/Close';
+import FeedbackOutlinedIcon from '@mui/icons-material/FeedbackOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LockIcon from '@mui/icons-material/Lock';
@@ -41,6 +42,7 @@ import ReactMarkdown from 'react-markdown';
 import { useNavigate, useParams } from 'react-router-dom';
 import { branchlineApiRef } from '../../api/BranchlineApi';
 import { derivePhaseStatus } from '../../components/ParallelBlock';
+import { FeedbackThread } from '../../components/FeedbackThread';
 import { StatusBadge } from '../../components/StatusBadge';
 import { WorkflowFlowDialog } from '../../components/WorkflowFlowDialog';
 import type { ParallelBlock, Step as WorkflowStep, Task, WorkflowInstance } from '../../types';
@@ -70,6 +72,8 @@ function TaskRow({
 }) {
   const isBlocked = !!blockedByLabel;
   const isActionable = !isBlocked && task.status === 'active';
+  const feedback = task.feedbackCounts;
+  const hasFeedback = !!feedback && feedback.total > 0;
 
   return (
     <Paper
@@ -91,9 +95,22 @@ function TaskRow({
             {task.label}
           </Typography>
         </Box>
-        <Box sx={{ flexShrink: 0 }}>
+        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexShrink: 0 }}>
+          {hasFeedback && (
+            <Chip
+              size="small"
+              variant="outlined"
+              color={feedback!.open > 0 ? 'warning' : 'success'}
+              icon={<FeedbackOutlinedIcon />}
+              label={
+                feedback!.open > 0
+                  ? `${feedback!.open} of ${feedback!.total} open`
+                  : `${feedback!.total} feedback`
+              }
+            />
+          )}
           <StatusBadge status={task.status} />
-        </Box>
+        </Stack>
       </Stack>
 
       {isBlocked && (
@@ -158,7 +175,7 @@ function TaskRow({
         </Box>
       )}
 
-      {(isActionable || task.documentation) && (
+      {(isActionable || task.documentation || hasFeedback) && (
         <Box
           sx={{
             pt: task.completedBy || task.skippedBy ? 0 : 1,
@@ -184,19 +201,31 @@ function TaskRow({
 
 function ActionDrawer({
   target,
+  instanceId,
+  canAct,
   onClose,
   onComplete,
   onSkip,
+  onRefresh,
 }: {
   target: ActionTarget | null;
+  instanceId?: string;
+  canAct: boolean;
   onClose: () => void;
   onComplete: (taskId: string) => Promise<void>;
   onSkip: (taskId: string, reason: string) => Promise<void>;
+  onRefresh: () => void;
 }) {
   const [skipOpen, setSkipOpen] = useState(false);
   const [skipReason, setSkipReason] = useState('');
   const [skipError, setSkipError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [openFeedback, setOpenFeedback] = useState(0);
+
+  // Seed the open-feedback count from the polled instance whenever the target changes.
+  useEffect(() => {
+    setOpenFeedback(target?.task.feedbackCounts?.open ?? 0);
+  }, [target]);
 
   const reset = () => {
     setSkipOpen(false);
@@ -204,6 +233,9 @@ function ActionDrawer({
     setSkipError('');
     setLoading(false);
   };
+
+  const isActionable = canAct && target?.task.status === 'active';
+  const completeBlocked = openFeedback > 0;
 
   const handleClose = () => {
     reset();
@@ -279,58 +311,84 @@ function ActionDrawer({
                 <ReactMarkdown>{target.task.documentation}</ReactMarkdown>
               </Box>
             )}
-            <Divider sx={{ mb: 2.5 }} />
-            {!skipOpen ? (
-              <Stack spacing={1.5}>
-                <Button
-                  variant="contained"
-                  color="success"
-                  disabled={loading}
-                  onClick={handleComplete}
-                  fullWidth
-                >
-                  Mark Complete
-                </Button>
-                <Button
-                  variant="outlined"
-                  color="warning"
-                  disabled={loading}
-                  onClick={() => setSkipOpen(true)}
-                  fullWidth
-                >
-                  Skip Task
-                </Button>
-              </Stack>
-            ) : (
+            {instanceId && (
               <>
-                <TextField
-                  multiline
-                  rows={3}
-                  fullWidth
-                  label="Reason for skipping"
-                  value={skipReason}
-                  onChange={e => {
-                    setSkipReason(e.target.value);
-                    setSkipError('');
-                  }}
-                  error={Boolean(skipError)}
-                  helperText={skipError || 'Required — explain why this task is being skipped.'}
-                  margin="dense"
-                  sx={{ mb: 2 }}
+                <Divider sx={{ mb: 2 }} />
+                <FeedbackThread
+                  instanceId={instanceId}
+                  taskId={target.task.id}
+                  canManage={canAct}
+                  onOpenCountChange={setOpenFeedback}
+                  onChange={onRefresh}
                 />
-                <Stack direction="row" spacing={1}>
-                  <Button onClick={() => setSkipOpen(false)} disabled={loading}>
-                    Back
-                  </Button>
-                  <Button
-                    onClick={handleSkipSubmit}
-                    variant="contained"
-                    color="warning"
-                    disabled={loading || !skipReason.trim()}
-                  >
-                    Confirm Skip
-                  </Button>
-                </Stack>
+              </>
+            )}
+            {isActionable && (
+              <>
+                <Divider sx={{ my: 2.5 }} />
+                {!skipOpen ? (
+                  <Stack spacing={1.5}>
+                    <Tooltip
+                      title={
+                        completeBlocked
+                          ? 'Resolve or grant an exception on all open feedback before completing.'
+                          : ''
+                      }
+                    >
+                      <span>
+                        <Button
+                          variant="contained"
+                          color="success"
+                          disabled={loading || completeBlocked}
+                          onClick={handleComplete}
+                          fullWidth
+                        >
+                          Mark Complete
+                        </Button>
+                      </span>
+                    </Tooltip>
+                    <Button
+                      variant="outlined"
+                      color="warning"
+                      disabled={loading}
+                      onClick={() => setSkipOpen(true)}
+                      fullWidth
+                    >
+                      Skip Task
+                    </Button>
+                  </Stack>
+                ) : (
+                  <>
+                    <TextField
+                      multiline
+                      rows={3}
+                      fullWidth
+                      label="Reason for skipping"
+                      value={skipReason}
+                      onChange={e => {
+                        setSkipReason(e.target.value);
+                        setSkipError('');
+                      }}
+                      error={Boolean(skipError)}
+                      helperText={skipError || 'Required — explain why this task is being skipped.'}
+                      margin="dense"
+                      sx={{ mb: 2 }}
+                    />
+                    <Stack direction="row" spacing={1}>
+                      <Button onClick={() => setSkipOpen(false)} disabled={loading}>
+                        Back
+                      </Button>
+                      <Button
+                        onClick={handleSkipSubmit}
+                        variant="contained"
+                        color="warning"
+                        disabled={loading || !skipReason.trim()}
+                      >
+                        Confirm Skip
+                      </Button>
+                    </Stack>
+                  </>
+                )}
               </>
             )}
           </Box>
@@ -759,7 +817,7 @@ export function WorkflowDetailPage() {
                                     task={task}
                                     blockedByLabel={blockedByStep?.label}
                                     onTakeAction={() =>
-                                      canAct && setActionTarget({ task, blockLabel: block.label })
+                                      setActionTarget({ task, blockLabel: block.label })
                                     }
                                   />
                                 </Box>
@@ -803,9 +861,12 @@ export function WorkflowDetailPage() {
 
       <ActionDrawer
         target={actionTarget}
+        instanceId={workflow?.id}
+        canAct={canAct}
         onClose={() => setActionTarget(null)}
         onComplete={handleComplete}
         onSkip={handleSkip}
+        onRefresh={fetchWorkflow}
       />
 
       <Dialog open={cancelDialogOpen} onClose={() => setCancelDialogOpen(false)} maxWidth="xs" fullWidth>

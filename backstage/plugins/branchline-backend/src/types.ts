@@ -12,6 +12,10 @@ export type {
   WorkflowInstance,
   WorkflowDefinition,
   StartWorkflowRequest,
+  FeedbackStatus,
+  FeedbackComment,
+  FeedbackItem,
+  FeedbackCounts,
 } from '@internal/backstage-plugin-branchline-common';
 
 // Backend-only types (not shared with the frontend)

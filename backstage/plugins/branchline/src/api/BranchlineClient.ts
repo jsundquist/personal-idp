@@ -2,11 +2,13 @@ import {
   DiscoveryApi,
   FetchApi,
 } from '@backstage/core-plugin-api';
-import type { BranchlineApi } from './BranchlineApi';
+import type { BranchlineApi, TaskFeedback } from './BranchlineApi';
 import type {
   WorkflowDefinition,
   WorkflowInstance,
   StartWorkflowRequest,
+  FeedbackItem,
+  FeedbackComment,
 } from '../types';
 
 export class BranchlineClient implements BranchlineApi {
@@ -70,5 +72,57 @@ export class BranchlineClient implements BranchlineApi {
 
   async cancelWorkflow(instanceId: string): Promise<void> {
     await this.fetch(`/workflows/${instanceId}/cancel`, { method: 'POST' });
+  }
+
+  async listTaskFeedback(instanceId: string, taskId: string): Promise<TaskFeedback> {
+    return this.fetch<TaskFeedback>(
+      `/workflows/${instanceId}/tasks/${taskId}/feedback`,
+    );
+  }
+
+  async addFeedback(
+    instanceId: string,
+    taskId: string,
+    body: string,
+  ): Promise<FeedbackItem> {
+    return this.fetch<FeedbackItem>(
+      `/workflows/${instanceId}/tasks/${taskId}/feedback`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body }),
+      },
+    );
+  }
+
+  async addFeedbackComment(
+    instanceId: string,
+    feedbackId: string,
+    body: string,
+  ): Promise<FeedbackComment> {
+    return this.fetch<FeedbackComment>(
+      `/workflows/${instanceId}/feedback/${feedbackId}/comments`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body }),
+      },
+    );
+  }
+
+  async closeFeedback(
+    instanceId: string,
+    feedbackId: string,
+    status: 'resolved' | 'exception',
+    exceptionReason?: string,
+  ): Promise<FeedbackItem> {
+    return this.fetch<FeedbackItem>(
+      `/workflows/${instanceId}/feedback/${feedbackId}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, exceptionReason }),
+      },
+    );
   }
 }
