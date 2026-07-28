@@ -9,12 +9,14 @@ interface FlowElement {
   name?: string;
   type: string;
   documentation?: string;
+  candidateGroups?: string[];
 }
 
 interface TaskRef {
   id: string;
   name?: string;
   documentation?: string;
+  candidateGroups?: string[];
 }
 
 interface StepSpec {
@@ -53,6 +55,24 @@ function getDocumentation(el: Element): string | undefined {
   return undefined;
 }
 
+/**
+ * Read literal candidateGroups from a task's zeebe:assignmentDefinition.
+ * FEEL expression values (starting with '=') are treated as "no static group".
+ */
+function getCandidateGroups(el: Element): string[] | undefined {
+  for (const child of childElements(el)) {
+    if (child.localName !== 'extensionElements') continue;
+    for (const ext of childElements(child)) {
+      if (ext.localName !== 'assignmentDefinition') continue;
+      const raw = ext.getAttribute('candidateGroups') ?? '';
+      if (!raw || raw.trim().startsWith('=')) return undefined;
+      const groups = raw.split(',').map(g => g.trim()).filter(Boolean);
+      return groups.length ? groups : undefined;
+    }
+  }
+  return undefined;
+}
+
 function parseSubProcessSteps(el: Element): StepSpec[] {
   const elements = new Map<string, FlowElement>();
   const outgoing = new Map<string, string[]>();
@@ -68,7 +88,13 @@ function parseSubProcessSteps(el: Element): StepSpec[] {
     if (localName === 'startEvent') {
       startId = id;
     } else if (TASK_TYPES.has(localName)) {
-      elements.set(id, { id, name: attr(child, 'name') || undefined, type: localName, documentation: getDocumentation(child) });
+      elements.set(id, {
+        id,
+        name: attr(child, 'name') || undefined,
+        type: localName,
+        documentation: getDocumentation(child),
+        candidateGroups: getCandidateGroups(child),
+      });
       continue;
     } else if (localName === 'sequenceFlow') {
       const src = attr(child, 'sourceRef');
@@ -95,7 +121,7 @@ function parseSubProcessSteps(el: Element): StepSpec[] {
       const node = elements.get(cur);
       if (!node) break;
       if (TASK_TYPES.has(node.type)) {
-        taskRefs.push({ id: cur, name: node.name, documentation: node.documentation });
+        taskRefs.push({ id: cur, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups });
         cur = (outgoing.get(cur) ?? [])[0] ?? '';
       } else if (node.type === mergeType) {
         mergeId = cur;
@@ -117,7 +143,7 @@ function parseSubProcessSteps(el: Element): StepSpec[] {
     const nexts = outgoing.get(nodeId) ?? [];
 
     if (TASK_TYPES.has(node.type)) {
-      steps.push({ id: nodeId, name: node.name, taskRefs: [{ id: nodeId, name: node.name, documentation: node.documentation }] });
+      steps.push({ id: nodeId, name: node.name, taskRefs: [{ id: nodeId, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups }] });
       traverse(nexts[0] ?? '');
     } else if (node.type === 'exclusiveGateway' && nexts.length > 1) {
       const allTaskRefs: TaskRef[] = [];
@@ -169,7 +195,7 @@ function parseSubProcessSteps(el: Element): StepSpec[] {
   if (steps.length === 0) {
     for (const [id, node] of elements) {
       if (TASK_TYPES.has(node.type)) {
-        steps.push({ id, name: node.name, taskRefs: [{ id, name: node.name, documentation: node.documentation }] });
+        steps.push({ id, name: node.name, taskRefs: [{ id, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups }] });
       }
     }
   }
@@ -245,6 +271,7 @@ export function buildHierarchyFromBpmn(
               label: ref.name ?? ref.id,
               status,
               ...(ref.documentation && { documentation: ref.documentation }),
+              ...(ref.candidateGroups && { candidateGroups: ref.candidateGroups }),
               ...(action?.action === 'completed' && {
                 completedBy: action.actor,
                 completedAt: action.occurredAt,
@@ -273,6 +300,7 @@ export function buildHierarchyFromBpmn(
             label: spec.name ?? taskId,
             status,
             ...(ref.documentation && { documentation: ref.documentation }),
+            ...(ref.candidateGroups && { candidateGroups: ref.candidateGroups }),
             ...(action?.action === 'completed' && {
               completedBy: action.actor,
               completedAt: action.occurredAt,

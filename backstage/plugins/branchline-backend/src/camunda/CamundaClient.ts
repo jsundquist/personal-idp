@@ -335,6 +335,24 @@ export class CamundaClient {
     return String(def.key);
   }
 
+  /**
+   * Resolve the candidateGroups declared on a single task in a definition's BPMN.
+   * Returns [] when the task is ungrouped (self-serve) or not found.
+   */
+  async getTaskCandidateGroups(bpmnProcessId: string, taskId: string): Promise<string[]> {
+    const phases = await this.getBpmnNodes(bpmnProcessId);
+    for (const phase of phases) {
+      for (const step of phase.stepSpecs) {
+        for (const ref of step.taskRefs) {
+          if (ref.id === taskId) {
+            return ref.candidateGroups ?? [];
+          }
+        }
+      }
+    }
+    return [];
+  }
+
   private async getBpmnNodes(bpmnProcessId: string): Promise<ReturnType<typeof parseBpmnXml>> {
     const key = await this.getDefinitionKey(bpmnProcessId);
     if (this.bpmnCache.has(key)) {

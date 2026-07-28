@@ -89,7 +89,13 @@ auth:
   # see https://backstage.io/docs/auth/ to learn about auth providers
   providers:
     # See https://backstage.io/docs/auth/guest/provider
-    guest: {}
+    # Resolve guest to the catalog user (examples/org.yaml defines it in the
+    # `default` namespace) so sign-in picks up its group memberOf relations.
+    # Without this, the provider defaults to user:development/guest, which has
+    # no catalog entity, so getGroupsForUser() returns [] and every task with
+    # candidateGroups reports canAct=false (no feedback button).
+    guest:
+      userEntityRef: user:default/guest
   # see https://backstage.io/docs/ai/mcp-actions#client-id-metadata-documents
   # to learn more about client id metadata documents
   clientIdMetadataDocuments:

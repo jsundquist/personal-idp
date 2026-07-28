@@ -23,6 +23,11 @@ const skipSchema = z.object({
   reason: z.string().min(1, 'Skip reason is required'),
 });
 
+// Compare group refs by their short name — candidateGroups in BPMN are bare
+// names ("arb"); getGroupsForUser returns full refs ("group:default/arb").
+const shortGroupName = (ref: string): string =>
+  ref.split('/').pop()!.toLowerCase();
+
 const feedbackSchema = z.object({
   body: z.string().min(1, 'Feedback body is required'),
 });
@@ -71,6 +76,26 @@ export function createRouter(opts: {
       throw new NotAllowedError(deniedMessage);
     }
     return credentials.principal.userEntityRef;
+  }
+
+  // Enforce the task's Camunda candidateGroups: a task with candidate groups can
+  // only be acted on by a member of one of them; an ungrouped task is self-serve.
+  async function assertCanActOnTask(
+    userEntityRef: string,
+    definitionId: string,
+    taskId: string,
+  ): Promise<void> {
+    const groups = await camunda.getTaskCandidateGroups(definitionId, taskId);
+    if (groups.length === 0) {
+      return;
+    }
+    const userGroups = await membership.getGroupsForUser(userEntityRef);
+    const userShort = new Set(userGroups.map(shortGroupName));
+    if (!groups.some(g => userShort.has(shortGroupName(g)))) {
+      throw new NotAllowedError(
+        `This task is restricted to members of: ${groups.join(', ')}`,
+      );
+    }
   }
 
   // GET /definitions — list Camunda process definitions
@@ -201,6 +226,24 @@ export function createRouter(opts: {
       logger.warn(`Failed to attach feedback counts for ${instance.id}`, err as Error);
     }
 
+    // Compute per-task canAct for the requesting user from each task's candidateGroups.
+    try {
+      const credentials = await httpAuth.credentials(req, { allow: ['user'] });
+      const userGroups = await membership.getGroupsForUser(credentials.principal.userEntityRef);
+      const userShort = new Set(userGroups.map(shortGroupName));
+      for (const block of parallelBlocks) {
+        for (const step of block.steps) {
+          for (const task of step.tasks) {
+            const groups = task.candidateGroups ?? [];
+            task.canAct =
+              groups.length === 0 || groups.some(g => userShort.has(shortGroupName(g)));
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn(`Failed to compute per-task canAct for ${instance.id}`, err as Error);
+    }
+
     // Auto-complete: if all phases are done and the DB still says active, update it.
     if (instance.status === 'active' && parallelBlocks.length > 0) {
       const allDone = parallelBlocks.every(block =>
@@ -262,6 +305,9 @@ export function createRouter(opts: {
 
     const instance = await db.getInstance(req.params.id);
 
+    // Per-task team gate: only members of the task's candidateGroups may act.
+    await assertCanActOnTask(userEntityRef, instance.definitionId, req.params.taskId);
+
     // Completion-blocking rule: a gate cannot be completed while it has open
     // feedback. Every feedback item must be resolved or excepted first.
     const counts = await db.feedbackCountsForTask(instance.id, req.params.taskId);
@@ -317,6 +363,9 @@ export function createRouter(opts: {
 
     const instance = await db.getInstance(req.params.id);
 
+    // Per-task team gate: only members of the task's candidateGroups may act.
+    await assertCanActOnTask(userEntityRef, instance.definitionId, req.params.taskId);
+
     // Complete the job in Camunda with a skipReason variable
     try {
       const elements = await camunda.getElementInstances(instance.camundaKey);
@@ -368,6 +417,8 @@ export function createRouter(opts: {
       'You do not have permission to add feedback on this workflow',
     );
     const instance = await db.getInstance(req.params.id);
+    // Only the task's candidate group may log feedback on it.
+    await assertCanActOnTask(author, instance.definitionId, req.params.taskId);
     const item = await db.createFeedback({
       instanceId: instance.id,
       taskId: req.params.taskId,
@@ -415,6 +466,9 @@ export function createRouter(opts: {
     if (feedback.instanceId !== req.params.id) {
       throw new InputError('Feedback item does not belong to this workflow');
     }
+    // Only the task's candidate group may resolve/except its feedback.
+    const patchInstance = await db.getInstance(req.params.id);
+    await assertCanActOnTask(closedBy, patchInstance.definitionId, feedback.taskId);
     if (feedback.status !== 'open') {
       throw new ConflictError(`Feedback item is already ${feedback.status}`);
     }

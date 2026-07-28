@@ -5,13 +5,60 @@ kind: User
 metadata:
   name: guest
 spec:
-  memberOf: [guests]
+  # Guest is seeded into every gate group so the demo workflow is fully walkable
+  # under guest-only auth. Remove a group here (e.g. arb) + rebuild to watch that
+  # task lock out in the UI.
+  memberOf: [guests, developers, arb, security, product, platform]
 ---
-# https://backstage.io/docs/features/software-catalog/descriptor-format#kind-group
 apiVersion: backstage.io/v1alpha1
 kind: Group
 metadata:
   name: guests
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: developers
+  description: Requesting/dev team (self-serve tasks)
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: arb
+  description: Architecture Review Board
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: security
+  description: Security & Compliance
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: product
+  description: Product owners
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform
+  description: Platform / SRE
 spec:
   type: team
   children: []

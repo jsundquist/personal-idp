@@ -19,6 +19,8 @@ const INSTANCE = {
 
 function buildApp(overrides?: {
   db?: Record<string, jest.Mock>;
+  camunda?: Record<string, jest.Mock>;
+  membership?: Record<string, jest.Mock>;
   permissions?: { authorize: jest.Mock };
 }) {
   const db = {
@@ -46,8 +48,14 @@ function buildApp(overrides?: {
     buildHierarchy: jest.fn().mockResolvedValue([]),
     buildFlowGraph: jest.fn().mockResolvedValue(undefined),
     getFlownodeProgress: jest.fn().mockResolvedValue(new Map()),
+    getTaskCandidateGroups: jest.fn().mockResolvedValue([]),
+    ...overrides?.camunda,
   };
-  const membership = { isMember: jest.fn().mockResolvedValue(true) };
+  const membership = {
+    isMember: jest.fn().mockResolvedValue(true),
+    getGroupsForUser: jest.fn().mockResolvedValue([]),
+    ...overrides?.membership,
+  };
 
   const router = createRouter({
     httpAuth: mockServices.httpAuth(),
@@ -278,6 +286,68 @@ describe('createRouter', () => {
       const types = res.body.map((e: { type: string }) => e.type);
       expect(types).toEqual(['workflow-started']);
       expect(types).not.toContain('workflow-completed');
+    });
+  });
+
+  describe('per-task team gate (candidateGroups)', () => {
+    it('403s when the user is not in the task candidate group', async () => {
+      const { app } = buildApp({
+        camunda: { getTaskCandidateGroups: jest.fn().mockResolvedValue(['arb']) },
+        membership: {
+          getGroupsForUser: jest.fn().mockResolvedValue(['group:default/developers']),
+        },
+      });
+      const res = await request(app).post('/workflows/wf-1/tasks/arch-review/complete');
+      expect(res.status).toBe(403);
+    });
+
+    it('allows when the user shares the candidate group (short-name match)', async () => {
+      const { app } = buildApp({
+        camunda: { getTaskCandidateGroups: jest.fn().mockResolvedValue(['arb']) },
+        membership: {
+          getGroupsForUser: jest.fn().mockResolvedValue(['group:default/arb']),
+        },
+      });
+      const res = await request(app).post('/workflows/wf-1/tasks/arch-review/complete');
+      expect(res.status).toBe(200);
+    });
+
+    it('allows an ungrouped (self-serve) task for anyone', async () => {
+      const { app } = buildApp();
+      const res = await request(app).post('/workflows/wf-1/tasks/submit/complete');
+      expect(res.status).toBe(200);
+    });
+
+    it('GET /workflows/:id computes per-task canAct from the user groups', async () => {
+      const hierarchy = [
+        {
+          id: 'p1',
+          label: 'Phase 1',
+          steps: [
+            {
+              id: 's1',
+              label: '',
+              parallelTasks: false,
+              tasks: [
+                { id: 'arch-review', label: 'Arch', status: 'active', candidateGroups: ['arb'] },
+                { id: 'submit', label: 'Submit', status: 'active' },
+              ],
+            },
+          ],
+        },
+      ];
+      const { app } = buildApp({
+        camunda: { buildHierarchy: jest.fn().mockResolvedValue(hierarchy) },
+        membership: {
+          getGroupsForUser: jest.fn().mockResolvedValue(['group:default/developers']),
+        },
+      });
+      const res = await request(app).get('/workflows/wf-1');
+      expect(res.status).toBe(200);
+      const tasks = res.body.parallelBlocks[0].steps[0].tasks;
+      const byId = Object.fromEntries(tasks.map((t: any) => [t.id, t]));
+      expect(byId['arch-review'].canAct).toBe(false); // not in arb
+      expect(byId.submit.canAct).toBe(true); // ungrouped self-serve
     });
   });
 });

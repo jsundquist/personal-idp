@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                  targetNamespace="http://personal-idp/workflows"
+                  exporter="personal-idp" exporterVersion="1.0">
+
+  <!--
+    Basic demo workflow — two phases, all human (userTask) steps.
+    Purpose: exercise the Branchline feedback model + audit trail against a
+    minimal process. Plain userTasks (no zeebe:userTask) are job-worker user
+    tasks completed via the Tasklist API — no external worker required.
+  -->
+
+  <bpmn:process id="basic-demo" name="Basic Demo Workflow" isExecutable="true">
+
+    <bpmn:startEvent id="start" name="Request Submitted">
+      <bpmn:outgoing>flow-start-to-p1</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- Phase 1: Intake and Review -->
+    <bpmn:subProcess id="phase-1" name="Intake &amp; Review">
+      <bpmn:incoming>flow-start-to-p1</bpmn:incoming>
+      <bpmn:outgoing>flow-p1-to-p2</bpmn:outgoing>
+
+      <bpmn:startEvent id="p1-start">
+        <bpmn:outgoing>flow-p1-start-to-submit</bpmn:outgoing>
+      </bpmn:startEvent>
+
+      <bpmn:userTask id="submit-request" name="Submit Service Request">
+        <bpmn:documentation>## Submit Service Request
+
+Capture the basics of the new service: name, owning team, and a short
+description of what it does and who will consume it.
+
+Complete this step once the request details are filled in.</bpmn:documentation>
+        <bpmn:extensionElements>
+          <zeebe:assignmentDefinition candidateGroups="developers" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>flow-p1-start-to-submit</bpmn:incoming>
+        <bpmn:outgoing>flow-submit-to-arch</bpmn:outgoing>
+      </bpmn:userTask>
+
+      <bpmn:userTask id="arch-review" name="Architecture Review">
+        <bpmn:documentation>## Architecture Review
+
+The Architecture Review Board checks the proposal for fit against existing
+services and standards.
+
+Use **feedback** on this step to record any changes the requester must make
+before it can be approved — the step cannot be completed until every
+feedback item is resolved or granted an exception.</bpmn:documentation>
+        <bpmn:extensionElements>
+          <zeebe:assignmentDefinition candidateGroups="arb" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>flow-submit-to-arch</bpmn:incoming>
+        <bpmn:outgoing>flow-arch-to-security</bpmn:outgoing>
+      </bpmn:userTask>
+
+      <bpmn:userTask id="security-review" name="Security Review">
+        <bpmn:documentation>## Security Review
+
+Security &amp; Compliance review the request against the data-classification and
+threat-model requirements.
+
+Log feedback for any required remediations.</bpmn:documentation>
+        <bpmn:extensionElements>
+          <zeebe:assignmentDefinition candidateGroups="security" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>flow-arch-to-security</bpmn:incoming>
+        <bpmn:outgoing>flow-security-to-p1end</bpmn:outgoing>
+      </bpmn:userTask>
+
+      <bpmn:endEvent id="p1-end">
+        <bpmn:incoming>flow-security-to-p1end</bpmn:incoming>
+      </bpmn:endEvent>
+
+      <bpmn:sequenceFlow id="flow-p1-start-to-submit" sourceRef="p1-start" targetRef="submit-request" />
+      <bpmn:sequenceFlow id="flow-submit-to-arch" sourceRef="submit-request" targetRef="arch-review" />
+      <bpmn:sequenceFlow id="flow-arch-to-security" sourceRef="arch-review" targetRef="security-review" />
+      <bpmn:sequenceFlow id="flow-security-to-p1end" sourceRef="security-review" targetRef="p1-end" />
+    </bpmn:subProcess>
+
+    <!-- Phase 2: Approval and Handoff -->
+    <bpmn:subProcess id="phase-2" name="Approval &amp; Handoff">
+      <bpmn:incoming>flow-p1-to-p2</bpmn:incoming>
+      <bpmn:outgoing>flow-p2-to-end</bpmn:outgoing>
+
+      <bpmn:startEvent id="p2-start">
+        <bpmn:outgoing>flow-p2-start-to-approval</bpmn:outgoing>
+      </bpmn:startEvent>
+
+      <bpmn:userTask id="owner-approval" name="Product Owner Approval">
+        <bpmn:documentation>## Product Owner Approval
+
+The sponsoring product owner confirms the business justification and signs
+off on proceeding.</bpmn:documentation>
+        <bpmn:extensionElements>
+          <zeebe:assignmentDefinition candidateGroups="product" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>flow-p2-start-to-approval</bpmn:incoming>
+        <bpmn:outgoing>flow-approval-to-signoff</bpmn:outgoing>
+      </bpmn:userTask>
+
+      <bpmn:userTask id="final-signoff" name="Final Sign-off">
+        <bpmn:documentation>## Final Sign-off
+
+Final confirmation that all reviews and approvals are complete and the
+service is cleared to move forward.</bpmn:documentation>
+        <bpmn:extensionElements>
+          <zeebe:assignmentDefinition candidateGroups="platform" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>flow-approval-to-signoff</bpmn:incoming>
+        <bpmn:outgoing>flow-signoff-to-p2end</bpmn:outgoing>
+      </bpmn:userTask>
+
+      <bpmn:endEvent id="p2-end">
+        <bpmn:incoming>flow-signoff-to-p2end</bpmn:incoming>
+      </bpmn:endEvent>
+
+      <bpmn:sequenceFlow id="flow-p2-start-to-approval" sourceRef="p2-start" targetRef="owner-approval" />
+      <bpmn:sequenceFlow id="flow-approval-to-signoff" sourceRef="owner-approval" targetRef="final-signoff" />
+      <bpmn:sequenceFlow id="flow-signoff-to-p2end" sourceRef="final-signoff" targetRef="p2-end" />
+    </bpmn:subProcess>
+
+    <bpmn:endEvent id="end" name="Completed">
+      <bpmn:incoming>flow-p2-to-end</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="flow-start-to-p1" sourceRef="start" targetRef="phase-1" />
+    <bpmn:sequenceFlow id="flow-p1-to-p2" sourceRef="phase-1" targetRef="phase-2" />
+    <bpmn:sequenceFlow id="flow-p2-to-end" sourceRef="phase-2" targetRef="end" />
+
+  </bpmn:process>
+</bpmn:definitions>

@@ -79,6 +79,13 @@ export interface Task {
   skipReason?: string;
   /** Approval-gate feedback tallies for this task, if any has been logged */
   feedbackCounts?: FeedbackCounts;
+  /** Responsible groups from the BPMN zeebe:assignmentDefinition candidateGroups (short names) */
+  candidateGroups?: string[];
+  /**
+   * Whether the requesting user may act on this task — true when the task has no
+   * candidateGroups (self-serve) or the user is a member of one. Computed per request.
+   */
+  canAct?: boolean;
 }
 
 export interface Step {

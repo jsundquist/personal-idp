@@ -96,21 +96,34 @@ function TaskRow({
           <Typography variant="body2" fontWeight={700} lineHeight={1.3}>
             {task.label}
           </Typography>
+          {hasFeedback && (
+            <Box sx={{ mt: 0.75 }}>
+              <Chip
+                size="small"
+                variant="outlined"
+                color={feedback!.open > 0 ? 'warning' : 'success'}
+                icon={<FeedbackOutlinedIcon />}
+                label={
+                  feedback!.open > 0
+                    ? `${feedback!.open} of ${feedback!.total} open`
+                    : `${feedback!.total} feedback`
+                }
+              />
+            </Box>
+          )}
         </Box>
         <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexShrink: 0 }}>
-          {hasFeedback && (
-            <Chip
-              size="small"
-              variant="outlined"
-              color={feedback!.open > 0 ? 'warning' : 'success'}
-              icon={<FeedbackOutlinedIcon />}
-              label={
-                feedback!.open > 0
-                  ? `${feedback!.open} of ${feedback!.total} open`
-                  : `${feedback!.total} feedback`
-              }
-            />
-          )}
+          {task.candidateGroups?.length && task.canAct === false ? (
+            <Tooltip title="You are not a member of the team that owns this task">
+              <Chip
+                size="small"
+                variant="outlined"
+                color="default"
+                icon={<LockIcon />}
+                label={`Requires: ${task.candidateGroups.join(', ')}`}
+              />
+            </Tooltip>
+          ) : null}
           <StatusBadge status={task.status} />
         </Stack>
       </Stack>
@@ -236,7 +249,9 @@ function ActionDrawer({
     setLoading(false);
   };
 
-  const isActionable = canAct && target?.task.status === 'active';
+  // Per-task gate: a task with candidateGroups the user isn't in has canAct === false.
+  const taskCanAct = canAct && (target?.task.canAct ?? true);
+  const isActionable = taskCanAct && target?.task.status === 'active';
   const completeBlocked = openFeedback > 0;
 
   const handleClose = () => {
@@ -298,6 +313,13 @@ function ActionDrawer({
           </Box>
 
           <Box sx={{ flex: 1, p: 2.5, overflow: 'auto' }}>
+            {!taskCanAct && target.task.candidateGroups?.length ? (
+              <Alert severity="info" icon={<LockIcon fontSize="inherit" />} sx={{ mb: 2 }}>
+                This task is owned by <strong>{target.task.candidateGroups.join(', ')}</strong>. Only
+                members of that team can complete it or manage its feedback. You can still add
+                comments to existing feedback.
+              </Alert>
+            ) : null}
             {target.task.documentation && (
               <Box
                 sx={{
@@ -319,7 +341,7 @@ function ActionDrawer({
                 <FeedbackThread
                   instanceId={instanceId}
                   taskId={target.task.id}
-                  canManage={canAct}
+                  canManage={taskCanAct}
                   onOpenCountChange={setOpenFeedback}
                   onChange={onRefresh}
                 />
