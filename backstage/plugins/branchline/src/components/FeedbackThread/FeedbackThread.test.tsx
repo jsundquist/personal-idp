@@ -1,5 +1,5 @@
 import { renderInTestApp, TestApiProvider } from '@backstage/frontend-test-utils';
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { branchlineApiRef } from '../../api/BranchlineApi';
 import { FeedbackThread } from './FeedbackThread';
 
@@ -49,29 +49,38 @@ async function render(props: {
 }
 
 describe('FeedbackThread', () => {
-  it('renders feedback items with their status and reports the open count', async () => {
+  it('reports the open count and keeps feedback out of the drawer until opened', async () => {
     const onOpenCountChange = jest.fn();
     await render({ canManage: false, onOpenCountChange });
 
-    expect(await screen.findByText('Add rate limiting')).toBeTruthy();
-    expect(screen.getByText('Open')).toBeTruthy();
+    // Summary button is shown, but the feedback body is not inline anymore.
+    expect(await screen.findByText('View feedback')).toBeTruthy();
+    expect(screen.getByText('1 of 1 open')).toBeTruthy();
+    expect(screen.queryByText('Add rate limiting')).toBeNull();
     expect(onOpenCountChange).toHaveBeenCalledWith(1);
   });
 
-  it('shows management actions only to the owning team', async () => {
+  it('opens the feedback dialog and drills into an item', async () => {
     await render({ canManage: true });
-    expect(await screen.findByText('Add rate limiting')).toBeTruthy();
-    expect(screen.getByText('Add feedback')).toBeTruthy();
-    expect(screen.getByText('Resolve')).toBeTruthy();
+
+    fireEvent.click(await screen.findByText('View feedback'));
+    // List row shows the feedback body.
+    fireEvent.click(await screen.findByText('Add rate limiting'));
+
+    // Detail view exposes the owning-team management actions.
+    expect(await screen.findByText('Resolve')).toBeTruthy();
     expect(screen.getByText('Grant Exception')).toBeTruthy();
+    expect(screen.getByText('Comments')).toBeTruthy();
   });
 
-  it('hides management actions from non-owning users', async () => {
+  it('shows the add-feedback affordance only to the owning team', async () => {
+    await render({ canManage: true });
+    expect(await screen.findByText('Add feedback')).toBeTruthy();
+  });
+
+  it('hides the add-feedback affordance from non-owning users', async () => {
     await render({ canManage: false });
-    expect(await screen.findByText('Add rate limiting')).toBeTruthy();
+    expect(await screen.findByText('View feedback')).toBeTruthy();
     expect(screen.queryByText('Add feedback')).toBeNull();
-    expect(screen.queryByText('Resolve')).toBeNull();
-    // Any participant can still comment
-    expect(screen.getByText('Comment')).toBeTruthy();
   });
 });
