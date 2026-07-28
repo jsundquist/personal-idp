@@ -39,6 +39,7 @@
     "@emotion/styled": "^11.3.0",
     "@internal/backstage-plugin-branchline-common": "^0.1.0",
     "@mui/icons-material": "^5.0.0",
+    "@mui/lab": "^5.0.0-alpha.177",
     "@mui/material": "^5.0.0",
     "d3": "^7.9.0",
     "react-markdown": "^10.1.0",

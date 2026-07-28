@@ -78,4 +78,7 @@ backend.add(import('@backstage/plugin-signals-backend'));
 // mcp actions plugin
 backend.add(import('@backstage/plugin-mcp-actions-backend'));
 
+// devtools plugin — surfaces app info, config, and dependencies
+backend.add(import('@backstage/plugin-devtools-backend'));
+
 backend.start();
