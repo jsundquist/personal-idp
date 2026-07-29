@@ -13,6 +13,7 @@ import { createElement } from 'react';
 import { branchlineApiRef } from './api/BranchlineApi';
 import { BranchlineClient } from './api/BranchlineClient';
 import { rootRouteRef } from './routes';
+import { taskFormsCollectorExtension } from './taskForms/TaskFormBlueprint';
 
 const branchlineApi = ApiBlueprint.make({
   name: 'branchline-api',
@@ -54,7 +55,7 @@ const detailPage = PageBlueprint.make({
 
 export const branchlinePlugin = createFrontendPlugin({
   pluginId: 'branchline',
-  extensions: [branchlineApi, listPage, detailPage],
+  extensions: [branchlineApi, listPage, detailPage, taskFormsCollectorExtension],
   routes: {
     root: rootRouteRef,
   },

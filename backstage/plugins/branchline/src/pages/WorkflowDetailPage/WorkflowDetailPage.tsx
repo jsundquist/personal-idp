@@ -47,6 +47,7 @@ import { derivePhaseStatus } from '../../components/ParallelBlock';
 import { FeedbackThread } from '../../components/FeedbackThread';
 import { StatusBadge } from '../../components/StatusBadge';
 import { WorkflowFlowDialog } from '../../components/WorkflowFlowDialog';
+import { taskFormRegistryApiRef } from '../../taskForms/taskFormRegistryApiRef';
 import type { ParallelBlock, Step as WorkflowStep, Task, WorkflowInstance } from '../../types';
 import { parseEntityRef } from '@backstage/catalog-model';
 
@@ -236,6 +237,7 @@ function ActionDrawer({
   const [skipError, setSkipError] = useState('');
   const [loading, setLoading] = useState(false);
   const [openFeedback, setOpenFeedback] = useState(0);
+  const formRegistry = useApi(taskFormRegistryApiRef);
 
   // Seed the open-feedback count from the polled instance whenever the target changes.
   useEffect(() => {
@@ -253,6 +255,8 @@ function ActionDrawer({
   const taskCanAct = canAct && (target?.task.canAct ?? true);
   const isActionable = taskCanAct && target?.task.status === 'active';
   const completeBlocked = openFeedback > 0;
+  const formKey = target?.task.formKey;
+  const CustomForm = formKey ? formRegistry.get(formKey) : undefined;
 
   const handleClose = () => {
     reset();
@@ -352,25 +356,45 @@ function ActionDrawer({
                 <Divider sx={{ my: 2.5 }} />
                 {!skipOpen ? (
                   <Stack spacing={1.5}>
-                    <Tooltip
-                      title={
-                        completeBlocked
-                          ? 'Resolve or grant an exception on all open feedback before completing.'
-                          : ''
-                      }
-                    >
-                      <span>
-                        <Button
-                          variant="contained"
-                          color="success"
-                          disabled={loading || completeBlocked}
-                          onClick={handleComplete}
-                          fullWidth
-                        >
-                          Mark Complete
-                        </Button>
-                      </span>
-                    </Tooltip>
+                    {formKey && !CustomForm && (
+                      <Alert severity="warning">
+                        No form is registered for &quot;{formKey}&quot;. Falling back to default
+                        actions.
+                      </Alert>
+                    )}
+                    {formKey && CustomForm && instanceId ? (
+                      <CustomForm
+                        instanceId={instanceId}
+                        taskId={target.task.id}
+                        formKey={formKey}
+                        task={target.task}
+                        onSubmitted={() => {
+                          onRefresh();
+                          handleClose();
+                        }}
+                        onClose={handleClose}
+                      />
+                    ) : (
+                      <Tooltip
+                        title={
+                          completeBlocked
+                            ? 'Resolve or grant an exception on all open feedback before completing.'
+                            : ''
+                        }
+                      >
+                        <span>
+                          <Button
+                            variant="contained"
+                            color="success"
+                            disabled={loading || completeBlocked}
+                            onClick={handleComplete}
+                            fullWidth
+                          >
+                            Mark Complete
+                          </Button>
+                        </span>
+                      </Tooltip>
+                    )}
                     <Button
                       variant="outlined"
                       color="warning"

@@ -1,9 +1,9 @@
 {
-  "name": "@internal/backstage-plugin-branchline-common",
+  "name": "@internal/backstage-plugin-branchline-node",
   "version": "0.1.0",
   "license": "UNLICENSED",
   "private": true,
-  "description": "Common functionalities for the branchline plugin",
+  "description": "Backend orchestrator SPI for the branchline plugin",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "publishConfig": {
@@ -13,7 +13,7 @@
     "types": "dist/index.d.ts"
   },
   "backstage": {
-    "role": "common-library",
+    "role": "node-library",
     "pluginId": "branchline"
   },
   "sideEffects": false,
@@ -26,7 +26,8 @@
     "postpack": "backstage-cli package postpack"
   },
   "dependencies": {
-    "@backstage/plugin-permission-common": "^0.9.9"
+    "@backstage/backend-plugin-api": "^1.9.2",
+    "@internal/backstage-plugin-branchline-common": "^0.1.0"
   },
   "devDependencies": {
     "@backstage/cli": "^0.36.3"

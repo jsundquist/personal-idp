@@ -14,7 +14,7 @@
  */
 
 import { DOMParser } from '@xmldom/xmldom';
-import type { FlowEdge, FlowGraph, FlowNode, FlowNodeType, TaskStatus } from '../types';
+import type { FlowEdge, FlowGraph, FlowNode, FlowNodeType, TaskStatus } from '@internal/backstage-plugin-branchline-common';
 import type { CamundaElementInstance } from './types';
 
 const TASK_TYPES = new Set([

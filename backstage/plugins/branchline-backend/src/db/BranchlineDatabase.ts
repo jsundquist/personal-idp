@@ -26,20 +26,20 @@ export class BranchlineDatabase {
 
   async createInstance(
     req: StartWorkflowRequest,
-    camundaKey: string,
+    orchestratorInstanceKey: string,
     createdBy?: string,
   ): Promise<WorkflowInstance> {
     const id = uuidv4();
     const now = new Date().toISOString();
 
-    // If camundaKey already exists (e.g. Camunda reset in dev), retire the stale record first.
+    // If this key already exists (e.g. the orchestrator was reset in dev), retire the stale record first.
     await this.db('workflow_instances')
-      .where({ camunda_key: camundaKey })
+      .where({ orchestrator_instance_key: orchestratorInstanceKey })
       .update({ status: 'cancelled', updated_at: now });
 
     await this.db('workflow_instances').insert({
       id,
-      camunda_key: camundaKey,
+      orchestrator_instance_key: orchestratorInstanceKey,
       definition_id: req.definitionId,
       title: req.title,
       description: req.description ?? null,
@@ -61,12 +61,12 @@ export class BranchlineDatabase {
     return this.rowToInstance(row);
   }
 
-  async getInstanceByCamundaKey(camundaKey: string): Promise<WorkflowInstance> {
+  async getInstanceByOrchestratorKey(orchestratorInstanceKey: string): Promise<WorkflowInstance> {
     const row = await this.db('workflow_instances')
-      .where({ camunda_key: camundaKey })
+      .where({ orchestrator_instance_key: orchestratorInstanceKey })
       .first();
     if (!row) {
-      throw new Error(`Workflow instance with camunda key '${camundaKey}' not found`);
+      throw new Error(`Workflow instance with orchestrator key '${orchestratorInstanceKey}' not found`);
     }
     return this.rowToInstance(row);
   }
@@ -328,7 +328,7 @@ export class BranchlineDatabase {
   private rowToInstance(row: Record<string, unknown>): WorkflowInstance {
     return {
       id: row.id as string,
-      camundaKey: row.camunda_key as string,
+      orchestratorInstanceKey: row.orchestrator_instance_key as string,
       definitionId: row.definition_id as string,
       title: row.title as string,
       description: (row.description as string | null) ?? undefined,

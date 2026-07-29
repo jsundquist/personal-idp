@@ -24,7 +24,8 @@ export { AuditEventType } from '@internal/backstage-plugin-branchline-common';
 
 // Backend-only types (not shared with the frontend)
 
-export type TaskAction = 'completed' | 'skipped';
+export type { TaskAction } from '@internal/backstage-plugin-branchline-node';
+import type { TaskAction } from '@internal/backstage-plugin-branchline-node';
 
 export interface TaskActionRecord {
   id: string;

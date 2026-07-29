@@ -11,7 +11,7 @@
     "start": "backstage-cli package start",
     "build": "backstage-cli package build",
     "lint": "backstage-cli package lint",
-    "test": "backstage-cli package test",
+    "test": "CI=true backstage-cli package test",
     "clean": "backstage-cli package clean",
     "build-image": "docker build ../.. -f Dockerfile --tag backstage"
   },
@@ -47,6 +47,8 @@
     "@backstage/plugin-techdocs-backend": "^2.2.2",
     "@backstage/plugin-user-settings-backend": "^0.4.5",
     "@internal/backstage-plugin-branchline-backend": "^0.1.0",
+    "@internal/backstage-plugin-branchline-backend-module-camunda": "^0.1.0",
+    "@internal/backstage-plugin-branchline-backend-module-step-functions": "^0.1.0",
     "@roadiehq/backstage-plugin-argo-cd-backend": "^4.8.0",
     "@terasky/backstage-plugin-kubernetes-ingestor": "^4.0.0",
     "app": "link:../app",

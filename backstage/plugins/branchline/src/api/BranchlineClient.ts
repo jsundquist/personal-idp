@@ -57,9 +57,15 @@ export class BranchlineClient implements BranchlineApi {
     });
   }
 
-  async completeTask(instanceId: string, taskId: string): Promise<void> {
+  async completeTask(
+    instanceId: string,
+    taskId: string,
+    variables?: Record<string, unknown>,
+  ): Promise<void> {
     await this.fetch(`/workflows/${instanceId}/tasks/${taskId}/complete`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ variables }),
     });
   }
 

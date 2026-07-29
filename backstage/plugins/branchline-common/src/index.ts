@@ -81,6 +81,8 @@ export interface Task {
   feedbackCounts?: FeedbackCounts;
   /** Responsible groups from the BPMN zeebe:assignmentDefinition candidateGroups (short names) */
   candidateGroups?: string[];
+  /** Consumer-registered custom form to render for this task, from the BPMN zeebe:taskHeaders `branchlineFormKey` entry */
+  formKey?: string;
   /**
    * Whether the requesting user may act on this task — true when the task has no
    * candidateGroups (self-serve) or the user is a member of one. Computed per request.
@@ -106,7 +108,7 @@ export interface ParallelBlock {
 
 export interface WorkflowInstance {
   id: string;
-  camundaKey: string;
+  orchestratorInstanceKey: string;
   definitionId: string;
   title: string;
   description?: string;
@@ -129,7 +131,7 @@ export interface WorkflowDefinition {
   id: string;
   name: string;
   version: number;
-  bpmnProcessId: string;
+  orchestratorDefinitionId: string;
 }
 
 export interface StartWorkflowRequest {

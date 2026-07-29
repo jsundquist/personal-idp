@@ -4,6 +4,7 @@ import { AuthorizeResult } from '@backstage/plugin-permission-common';
 import { screen } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { branchlineApiRef } from '../../api/BranchlineApi';
+import { taskFormRegistryApiRef } from '../../taskForms/taskFormRegistryApiRef';
 import { WorkflowDetailPage } from './WorkflowDetailPage';
 
 function workflowWith(task: Record<string, unknown>) {
@@ -32,11 +33,13 @@ async function render(task: Record<string, unknown>) {
   const permissionApi = {
     authorize: jest.fn().mockResolvedValue({ result: AuthorizeResult.ALLOW }),
   };
+  const formRegistry = { get: jest.fn().mockReturnValue(undefined) };
   await renderInTestApp(
     <TestApiProvider
       apis={[
         [branchlineApiRef, api],
         [permissionApiRef, permissionApi],
+        [taskFormRegistryApiRef, formRegistry],
       ]}
     >
       <Routes>

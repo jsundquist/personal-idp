@@ -20,7 +20,7 @@ export interface BranchlineApi {
   listMyWorkflowInstances(): Promise<WorkflowInstance[]>;
   getWorkflowInstance(instanceId: string): Promise<WorkflowInstance>;
   startWorkflow(req: StartWorkflowRequest): Promise<WorkflowInstance>;
-  completeTask(instanceId: string, taskId: string): Promise<void>;
+  completeTask(instanceId: string, taskId: string, variables?: Record<string, unknown>): Promise<void>;
   skipTask(instanceId: string, taskId: string, reason: string): Promise<void>;
   cancelWorkflow(instanceId: string): Promise<void>;
   listTaskFeedback(instanceId: string, taskId: string): Promise<TaskFeedback>;

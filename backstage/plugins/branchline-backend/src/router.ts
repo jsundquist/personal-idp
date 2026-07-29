@@ -2,10 +2,10 @@ import { HttpAuthService, LoggerService, PermissionsService } from '@backstage/b
 import { AuthorizeResult } from '@backstage/plugin-permission-common';
 import { ConflictError, InputError, NotAllowedError } from '@backstage/errors';
 import { branchlineWorkflowActPermission } from '@internal/backstage-plugin-branchline-common';
+import type { WorkflowOrchestrator } from '@internal/backstage-plugin-branchline-node';
 import express from 'express';
 import Router from 'express-promise-router';
 import { z } from 'zod/v3';
-import { CamundaClient } from './camunda/CamundaClient';
 import { GroupMembershipChecker } from './catalog/GroupMembershipChecker';
 import { BranchlineDatabase } from './db/BranchlineDatabase';
 import { AuditEventType } from './types';
@@ -21,6 +21,10 @@ const startWorkflowSchema = z.object({
 
 const skipSchema = z.object({
   reason: z.string().min(1, 'Skip reason is required'),
+});
+
+const completeSchema = z.object({
+  variables: z.record(z.unknown()).optional(),
 });
 
 // Compare group refs by their short name — candidateGroups in BPMN are bare
@@ -51,12 +55,12 @@ const closeFeedbackSchema = z
 export function createRouter(opts: {
   httpAuth: HttpAuthService;
   db: BranchlineDatabase;
-  camunda: CamundaClient;
+  orchestrator: WorkflowOrchestrator;
   membership: GroupMembershipChecker;
   permissions: PermissionsService;
   logger: LoggerService;
 }): express.Router {
-  const { httpAuth, db, camunda, membership, permissions, logger } = opts;
+  const { httpAuth, db, orchestrator, membership, permissions, logger } = opts;
   const router = Router();
   router.use(express.json());
 
@@ -78,14 +82,14 @@ export function createRouter(opts: {
     return credentials.principal.userEntityRef;
   }
 
-  // Enforce the task's Camunda candidateGroups: a task with candidate groups can
+  // Enforce the task's candidate groups: a task with candidate groups can
   // only be acted on by a member of one of them; an ungrouped task is self-serve.
   async function assertCanActOnTask(
     userEntityRef: string,
     definitionId: string,
     taskId: string,
   ): Promise<void> {
-    const groups = await camunda.getTaskCandidateGroups(definitionId, taskId);
+    const groups = await orchestrator.getTaskCandidateGroups(definitionId, taskId);
     if (groups.length === 0) {
       return;
     }
@@ -98,26 +102,26 @@ export function createRouter(opts: {
     }
   }
 
-  // GET /definitions — list Camunda process definitions
+  // GET /definitions — list workflow definitions from the active orchestrator
   router.get('/definitions', async (_req, res) => {
     try {
-      const defs = await camunda.listDefinitions();
+      const defs = await orchestrator.listDefinitions();
       const latest = new Map<string, typeof defs[number]>();
       for (const d of defs) {
-        const existing = latest.get(d.bpmnProcessId);
+        const existing = latest.get(d.id);
         if (!existing || d.version > existing.version) {
-          latest.set(d.bpmnProcessId, d);
+          latest.set(d.id, d);
         }
       }
       res.json(
         Array.from(latest.values()).map(d => ({
-          id: d.bpmnProcessId,
+          id: d.id,
           name: d.name,
           version: d.version,
         })),
       );
     } catch (err) {
-      logger.warn('Failed to fetch Camunda definitions, returning empty list', err as Error);
+      logger.warn('Failed to fetch workflow definitions, returning empty list', err as Error);
       res.json([]);
     }
   });
@@ -130,14 +134,16 @@ export function createRouter(opts: {
       : await db.listInstances();
     let progressMap = new Map<string, { completedPhases: number; totalPhases: number }>();
     try {
-      progressMap = await camunda.getFlownodeProgress(instances.map(i => i.camundaKey));
+      progressMap = await orchestrator.getFlownodeProgress(
+        instances.map(i => i.orchestratorInstanceKey),
+      );
     } catch (err) {
-      logger.warn('Failed to fetch phase progress from Camunda', err as Error);
+      logger.warn('Failed to fetch phase progress from the orchestrator', err as Error);
     }
     res.json(
       instances.map(i => ({
         ...i,
-        ...(progressMap.get(i.camundaKey) ?? { completedPhases: 0, totalPhases: 0 }),
+        ...(progressMap.get(i.orchestratorInstanceKey) ?? { completedPhases: 0, totalPhases: 0 }),
       })),
     );
   });
@@ -164,22 +170,22 @@ export function createRouter(opts: {
     const credentials = await httpAuth.credentials(req, { allow: ['user'] });
     const createdBy = credentials.principal.userEntityRef;
 
-    let camundaKey: string;
+    let orchestratorInstanceKey: string;
     try {
-      const result = await camunda.startInstance({
-        processDefinitionId: definitionId,
+      const result = await orchestrator.startInstance({
+        definitionId,
         variables: { branchlineTitle: title, branchlineOwner: owningGroup },
       });
-      camundaKey = result.processInstanceKey;
+      orchestratorInstanceKey = result.orchestratorInstanceKey;
     } catch (err) {
       const msg = (err as Error).message ?? String(err);
-      logger.error('Failed to start Camunda process instance', err as Error);
-      throw new Error(`Failed to start workflow in Camunda: ${msg}`);
+      logger.error('Failed to start workflow instance', err as Error);
+      throw new Error(`Failed to start workflow: ${msg}`);
     }
 
     const instance = await db.createInstance(
       { definitionId, title, description, owningGroup, entityRef },
-      camundaKey,
+      orchestratorInstanceKey,
       createdBy,
     );
     res.status(201).json(instance);
@@ -202,8 +208,8 @@ export function createRouter(opts: {
     let flowGraph: FlowGraph | undefined;
     try {
       [parallelBlocks, flowGraph] = await Promise.all([
-        camunda.buildHierarchy(instance.definitionId, instance.camundaKey, actionPayload),
-        camunda.buildFlowGraph(instance.definitionId, instance.camundaKey, actionPayload),
+        orchestrator.buildHierarchy(instance.definitionId, instance.orchestratorInstanceKey, actionPayload),
+        orchestrator.buildFlowGraph(instance.definitionId, instance.orchestratorInstanceKey, actionPayload),
       ]);
     } catch (err) {
       logger.warn(`Failed to build task hierarchy for ${instance.id}`, err as Error);
@@ -281,9 +287,9 @@ export function createRouter(opts: {
     }
 
     try {
-      await camunda.cancelInstance(instance.camundaKey);
+      await orchestrator.cancelInstance(instance.orchestratorInstanceKey);
     } catch (err) {
-      logger.warn(`Failed to cancel Camunda process instance for ${instance.id}`, err as Error);
+      logger.warn(`Failed to cancel orchestrator instance for ${instance.id}`, err as Error);
     }
 
     await db.updateInstanceStatus(instance.id, 'cancelled');
@@ -292,6 +298,11 @@ export function createRouter(opts: {
 
   // POST /workflows/:id/tasks/:taskId/complete
   router.post('/workflows/:id/tasks/:taskId/complete', async (req, res) => {
+    const parsed = completeSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new InputError(parsed.error.toString());
+    }
+
     const credentials = await httpAuth.credentials(req, { allow: ['user'] });
     const userEntityRef = credentials.principal.userEntityRef;
 
@@ -317,21 +328,14 @@ export function createRouter(opts: {
       );
     }
 
-    // Resolve the element instance and complete via the appropriate Camunda API.
-    // bpmn:userTask elements in Camunda 8.6+ are Camunda user tasks (no jobKey);
-    // older job-worker-style tasks carry a jobKey.
     try {
-      const elements = await camunda.getElementInstances(instance.camundaKey);
-      const el = elements.find(e => e.flowNodeId === req.params.taskId && e.state === 'ACTIVE');
-      if (el) {
-        if (el.jobKey) {
-          await camunda.completeJob(el.jobKey);
-        } else {
-          await camunda.completeUserTask(instance.camundaKey, req.params.taskId);
-        }
-      }
+      await orchestrator.completeTask(
+        instance.orchestratorInstanceKey,
+        req.params.taskId,
+        parsed.data.variables,
+      );
     } catch (err) {
-      logger.warn('Could not signal task completion to Camunda', err as Error);
+      logger.warn('Could not signal task completion to the orchestrator', err as Error);
     }
 
     const record = await db.recordAction({
@@ -366,20 +370,14 @@ export function createRouter(opts: {
     // Per-task team gate: only members of the task's candidateGroups may act.
     await assertCanActOnTask(userEntityRef, instance.definitionId, req.params.taskId);
 
-    // Complete the job in Camunda with a skipReason variable
     try {
-      const elements = await camunda.getElementInstances(instance.camundaKey);
-      const el = elements.find(e => e.flowNodeId === req.params.taskId && e.state === 'ACTIVE');
-      if (el) {
-        const vars = { branchlineSkipped: true, branchlineSkipReason: parsed.data.reason };
-        if (el.jobKey) {
-          await camunda.completeJob(el.jobKey, vars);
-        } else {
-          await camunda.completeUserTask(instance.camundaKey, req.params.taskId, vars);
-        }
-      }
+      await orchestrator.skipTask(
+        instance.orchestratorInstanceKey,
+        req.params.taskId,
+        parsed.data.reason,
+      );
     } catch (err) {
-      logger.warn('Could not signal task skip to Camunda', err as Error);
+      logger.warn('Could not signal task skip to the orchestrator', err as Error);
     }
 
     const record = await db.recordAction({

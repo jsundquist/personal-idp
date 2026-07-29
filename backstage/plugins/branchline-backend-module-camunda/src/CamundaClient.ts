@@ -6,9 +6,15 @@ import {
   StartProcessInstanceRequest,
   StartProcessInstanceResponse,
 } from './types';
-import { FlowGraph, ParallelBlock, TaskAction } from '../types';
+import { FlowGraph, ParallelBlock } from '@internal/backstage-plugin-branchline-common';
 import { parseBpmnXml, buildHierarchyFromBpmn } from './BpmnParser';
 import { bpmnToFlowGraph } from './BpmnAdapter';
+import type {
+  OrchestratorDefinition,
+  StartWorkflowResult,
+  TaskActionInput,
+  WorkflowOrchestrator,
+} from '@internal/backstage-plugin-branchline-node';
 
 interface TokenCache {
   token: string;
@@ -22,7 +28,7 @@ interface SessionCache {
   expiresAt: number;
 }
 
-export class CamundaClient {
+export class CamundaClient implements WorkflowOrchestrator {
   private readonly operateBaseUrl: string;
   private readonly zeebeBaseUrl: string;
   private readonly tasklistBaseUrl: string;
@@ -172,7 +178,7 @@ export class CamundaClient {
     return res.json() as Promise<T>;
   }
 
-  async listDefinitions(): Promise<CamundaProcessDefinition[]> {
+  private async listRawDefinitions(): Promise<CamundaProcessDefinition[]> {
     const result = await this.operatePost<CamundaSearchResponse<CamundaProcessDefinition>>(
       '/v1/process-definitions/search',
       { size: 100 },
@@ -180,10 +186,21 @@ export class CamundaClient {
     return result.items;
   }
 
-  async startInstance(
-    req: StartProcessInstanceRequest,
-  ): Promise<StartProcessInstanceResponse> {
-    return this.zeebePost<StartProcessInstanceResponse>('/v2/process-instances', req);
+  async listDefinitions(): Promise<OrchestratorDefinition[]> {
+    const defs = await this.listRawDefinitions();
+    return defs.map(d => ({ id: d.bpmnProcessId, name: d.name, version: d.version }));
+  }
+
+  async startInstance(opts: {
+    definitionId: string;
+    variables?: Record<string, unknown>;
+  }): Promise<StartWorkflowResult> {
+    const req: StartProcessInstanceRequest = {
+      processDefinitionId: opts.definitionId,
+      variables: opts.variables,
+    };
+    const res = await this.zeebePost<StartProcessInstanceResponse>('/v2/process-instances', req);
+    return { orchestratorInstanceKey: res.processInstanceKey };
   }
 
   async getElementInstances(
@@ -243,6 +260,36 @@ export class CamundaClient {
 
   async completeJob(jobKey: string, variables?: Record<string, unknown>): Promise<void> {
     await this.zeebePost(`/v2/jobs/${jobKey}/complete`, { variables: variables ?? {} });
+  }
+
+  /**
+   * Resolve the active element instance for `taskId` and complete it via
+   * whichever Camunda API applies: bpmn:userTask elements in Camunda 8.6+ are
+   * Camunda user tasks (no jobKey); older job-worker-style tasks carry a jobKey.
+   * A no-op if the task isn't found active (matches prior router behavior).
+   */
+  async completeTask(
+    processInstanceKey: string,
+    taskId: string,
+    variables?: Record<string, unknown>,
+  ): Promise<void> {
+    const elements = await this.getElementInstances(processInstanceKey);
+    const el = elements.find(e => e.flowNodeId === taskId && e.state === 'ACTIVE');
+    if (!el) {
+      return;
+    }
+    if (el.jobKey) {
+      await this.completeJob(el.jobKey, variables);
+    } else {
+      await this.completeUserTask(processInstanceKey, taskId, variables);
+    }
+  }
+
+  async skipTask(processInstanceKey: string, taskId: string, reason: string): Promise<void> {
+    await this.completeTask(processInstanceKey, taskId, {
+      branchlineSkipped: true,
+      branchlineSkipReason: reason,
+    });
   }
 
   private async getTasklistSession(): Promise<SessionCache> {
@@ -374,7 +421,7 @@ export class CamundaClient {
   async buildHierarchy(
     bpmnProcessId: string,
     processInstanceKey: string,
-    actions: Array<{ taskId: string; action: TaskAction; actor: string; skipReason?: string; occurredAt: string }>,
+    actions: TaskActionInput[],
   ): Promise<ParallelBlock[]> {
     const [bpmnNodes, instances] = await Promise.all([
       this.getBpmnNodes(bpmnProcessId),
@@ -386,7 +433,7 @@ export class CamundaClient {
   async buildFlowGraph(
     bpmnProcessId: string,
     processInstanceKey: string,
-    actions: Array<{ taskId: string; action: TaskAction; actor: string; skipReason?: string; occurredAt: string }>,
+    actions: TaskActionInput[],
   ): Promise<FlowGraph> {
     const key = await this.getDefinitionKey(bpmnProcessId);
     const auth = await this.operateAuthHeaders();

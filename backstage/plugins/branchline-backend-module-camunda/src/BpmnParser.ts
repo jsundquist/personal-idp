@@ -1,6 +1,6 @@
 import { DOMParser } from '@xmldom/xmldom';
 import { CamundaElementInstance } from './types';
-import { ParallelBlock, Step, Task, TaskStatus } from '../types';
+import { ParallelBlock, Step, Task, TaskStatus } from '@internal/backstage-plugin-branchline-common';
 
 const TASK_TYPES = new Set(['serviceTask', 'userTask', 'manualTask', 'receiveTask', 'sendTask']);
 
@@ -10,6 +10,7 @@ interface FlowElement {
   type: string;
   documentation?: string;
   candidateGroups?: string[];
+  formKey?: string;
 }
 
 interface TaskRef {
@@ -17,6 +18,7 @@ interface TaskRef {
   name?: string;
   documentation?: string;
   candidateGroups?: string[];
+  formKey?: string;
 }
 
 interface StepSpec {
@@ -73,6 +75,28 @@ function getCandidateGroups(el: Element): string[] | undefined {
   return undefined;
 }
 
+const FORM_KEY_HEADER = 'branchlineFormKey';
+
+/**
+ * Read the `branchlineFormKey` zeebe:taskHeaders entry, identifying a
+ * consumer-registered custom form to render for this task.
+ */
+function getFormKey(el: Element): string | undefined {
+  for (const child of childElements(el)) {
+    if (child.localName !== 'extensionElements') continue;
+    for (const ext of childElements(child)) {
+      if (ext.localName !== 'taskHeaders') continue;
+      for (const header of childElements(ext)) {
+        if (header.localName === 'header' && attr(header, 'key') === FORM_KEY_HEADER) {
+          const value = attr(header, 'value').trim();
+          return value || undefined;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
 function parseSubProcessSteps(el: Element): StepSpec[] {
   const elements = new Map<string, FlowElement>();
   const outgoing = new Map<string, string[]>();
@@ -94,6 +118,7 @@ function parseSubProcessSteps(el: Element): StepSpec[] {
         type: localName,
         documentation: getDocumentation(child),
         candidateGroups: getCandidateGroups(child),
+        formKey: getFormKey(child),
       });
       continue;
     } else if (localName === 'sequenceFlow') {
@@ -121,7 +146,7 @@ function parseSubProcessSteps(el: Element): StepSpec[] {
       const node = elements.get(cur);
       if (!node) break;
       if (TASK_TYPES.has(node.type)) {
-        taskRefs.push({ id: cur, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups });
+        taskRefs.push({ id: cur, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups, formKey: node.formKey });
         cur = (outgoing.get(cur) ?? [])[0] ?? '';
       } else if (node.type === mergeType) {
         mergeId = cur;
@@ -143,7 +168,7 @@ function parseSubProcessSteps(el: Element): StepSpec[] {
     const nexts = outgoing.get(nodeId) ?? [];
 
     if (TASK_TYPES.has(node.type)) {
-      steps.push({ id: nodeId, name: node.name, taskRefs: [{ id: nodeId, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups }] });
+      steps.push({ id: nodeId, name: node.name, taskRefs: [{ id: nodeId, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups, formKey: node.formKey }] });
       traverse(nexts[0] ?? '');
     } else if (node.type === 'exclusiveGateway' && nexts.length > 1) {
       const allTaskRefs: TaskRef[] = [];
@@ -195,7 +220,7 @@ function parseSubProcessSteps(el: Element): StepSpec[] {
   if (steps.length === 0) {
     for (const [id, node] of elements) {
       if (TASK_TYPES.has(node.type)) {
-        steps.push({ id, name: node.name, taskRefs: [{ id, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups }] });
+        steps.push({ id, name: node.name, taskRefs: [{ id, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups, formKey: node.formKey }] });
       }
     }
   }
@@ -272,6 +297,7 @@ export function buildHierarchyFromBpmn(
               status,
               ...(ref.documentation && { documentation: ref.documentation }),
               ...(ref.candidateGroups && { candidateGroups: ref.candidateGroups }),
+              ...(ref.formKey && { formKey: ref.formKey }),
               ...(action?.action === 'completed' && {
                 completedBy: action.actor,
                 completedAt: action.occurredAt,
@@ -301,6 +327,7 @@ export function buildHierarchyFromBpmn(
             status,
             ...(ref.documentation && { documentation: ref.documentation }),
             ...(ref.candidateGroups && { candidateGroups: ref.candidateGroups }),
+            ...(ref.formKey && { formKey: ref.formKey }),
             ...(action?.action === 'completed' && {
               completedBy: action.actor,
               completedAt: action.occurredAt,

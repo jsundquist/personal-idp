@@ -9,7 +9,7 @@ import { createRouter } from './router';
 
 const INSTANCE = {
   id: 'wf-1',
-  camundaKey: 'ck-1',
+  orchestratorInstanceKey: 'ck-1',
   owningGroup: 'group:default/platform',
   status: 'active',
   createdBy: 'user:default/starter',
@@ -19,7 +19,7 @@ const INSTANCE = {
 
 function buildApp(overrides?: {
   db?: Record<string, jest.Mock>;
-  camunda?: Record<string, jest.Mock>;
+  orchestrator?: Record<string, jest.Mock>;
   membership?: Record<string, jest.Mock>;
   permissions?: { authorize: jest.Mock };
 }) {
@@ -40,16 +40,17 @@ function buildApp(overrides?: {
     closeFeedback: jest.fn().mockResolvedValue({ id: 'fb-1', status: 'resolved' }),
     ...overrides?.db,
   };
-  const camunda = {
+  const orchestrator = {
     listDefinitions: jest.fn().mockResolvedValue([]),
-    getElementInstances: jest.fn().mockResolvedValue([]),
-    completeJob: jest.fn(),
-    completeUserTask: jest.fn(),
+    startInstance: jest.fn().mockResolvedValue({ orchestratorInstanceKey: 'ck-1' }),
+    cancelInstance: jest.fn(),
+    completeTask: jest.fn(),
+    skipTask: jest.fn(),
     buildHierarchy: jest.fn().mockResolvedValue([]),
     buildFlowGraph: jest.fn().mockResolvedValue(undefined),
     getFlownodeProgress: jest.fn().mockResolvedValue(new Map()),
     getTaskCandidateGroups: jest.fn().mockResolvedValue([]),
-    ...overrides?.camunda,
+    ...overrides?.orchestrator,
   };
   const membership = {
     isMember: jest.fn().mockResolvedValue(true),
@@ -60,7 +61,7 @@ function buildApp(overrides?: {
   const router = createRouter({
     httpAuth: mockServices.httpAuth(),
     db: db as any,
-    camunda: camunda as any,
+    orchestrator: orchestrator as any,
     membership: membership as any,
     permissions: (overrides?.permissions ?? mockServices.permissions()) as any,
     logger: mockServices.logger.mock() as any,
@@ -292,7 +293,7 @@ describe('createRouter', () => {
   describe('per-task team gate (candidateGroups)', () => {
     it('403s when the user is not in the task candidate group', async () => {
       const { app } = buildApp({
-        camunda: { getTaskCandidateGroups: jest.fn().mockResolvedValue(['arb']) },
+        orchestrator: { getTaskCandidateGroups: jest.fn().mockResolvedValue(['arb']) },
         membership: {
           getGroupsForUser: jest.fn().mockResolvedValue(['group:default/developers']),
         },
@@ -303,7 +304,7 @@ describe('createRouter', () => {
 
     it('allows when the user shares the candidate group (short-name match)', async () => {
       const { app } = buildApp({
-        camunda: { getTaskCandidateGroups: jest.fn().mockResolvedValue(['arb']) },
+        orchestrator: { getTaskCandidateGroups: jest.fn().mockResolvedValue(['arb']) },
         membership: {
           getGroupsForUser: jest.fn().mockResolvedValue(['group:default/arb']),
         },
@@ -337,7 +338,7 @@ describe('createRouter', () => {
         },
       ];
       const { app } = buildApp({
-        camunda: { buildHierarchy: jest.fn().mockResolvedValue(hierarchy) },
+        orchestrator: { buildHierarchy: jest.fn().mockResolvedValue(hierarchy) },
         membership: {
           getGroupsForUser: jest.fn().mockResolvedValue(['group:default/developers']),
         },

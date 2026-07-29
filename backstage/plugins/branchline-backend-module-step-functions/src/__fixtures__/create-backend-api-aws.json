@@ -1,0 +1,441 @@
+{
+  "Comment": "Create Backend API/Service — converted from create-backend-api.bpmn. Each BPMN subProcess becomes a single-branch Parallel state for grouping. Sequential tasks inside a subprocess chain with Next inside the branch. Nested parallelGateway fork/join pairs become nested Parallel states within the branch.",
+  "StartAt": "Phase 1: Provision Project",
+  "States": {
+
+    "Phase 1: Provision Project": {
+      "Comment": "Maps to BPMN subProcess 'phase-1-provision-project'. Sequential tasks bookend a nested Parallel for the five concurrent tool configurations.",
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Scaffold Repository",
+          "States": {
+            "Scaffold Repository": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Output": "{% $states.result.Payload %}",
+              "Arguments": { "Payload": "{% $states.input %}" },
+              "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+              "Next": "Scaffold Project"
+            },
+            "Scaffold Project": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Output": "{% $states.result.Payload %}",
+              "Arguments": { "Payload": "{% $states.input %}" },
+              "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+              "Next": "Configure Tools"
+            },
+            "Configure Tools": {
+              "Comment": "BPMN parallelGateway 'tools-fork/tools-join' — five concurrent tool configurations.",
+              "Type": "Parallel",
+              "Branches": [
+                {
+                  "StartAt": "Configure SonarCloud",
+                  "States": {
+                    "Configure SonarCloud": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "StartAt": "Configure Snyk",
+                  "States": {
+                    "Configure Snyk": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "StartAt": "Configure GitGuardian",
+                  "States": {
+                    "Configure GitGuardian": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "StartAt": "Configure Sentry",
+                  "States": {
+                    "Configure Sentry": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "StartAt": "Configure Grafana Cloud",
+                  "States": {
+                    "Configure Grafana Cloud": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                }
+              ],
+              "Next": "Provision Infrastructure"
+            },
+            "Provision Infrastructure": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Output": "{% $states.result.Payload %}",
+              "Arguments": { "Payload": "{% $states.input %}" },
+              "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+              "Next": "Deploy to Staging"
+            },
+            "Deploy to Staging": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Output": "{% $states.result.Payload %}",
+              "Arguments": { "Payload": "{% $states.input %}" },
+              "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+              "End": true
+            }
+          }
+        }
+      ],
+      "Next": "Phase 2: Request Initial Reviews"
+    },
+
+    "Phase 2: Request Initial Reviews": {
+      "Comment": "Maps to BPMN subProcess 'phase-2-initial-reviews'. The nested Parallel mirrors the parallelGateway fork/join with two review branches, each followed by a Choice.",
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Reviews",
+          "States": {
+            "Reviews": {
+              "Type": "Parallel",
+              "Branches": [
+                {
+                  "Comment": "BPMN: reviews-fork → Request Architecture Review → arch-review-gateway → reviews-join",
+                  "StartAt": "Request Architecture Review",
+                  "States": {
+                    "Request Architecture Review": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "Next": "Architecture Review Outcome"
+                    },
+                    "Architecture Review Outcome": {
+                      "Comment": "BPMN exclusiveGateway 'arch-review-gateway'.",
+                      "Type": "Choice",
+                      "Choices": [
+                        { "Condition": "{% $states.input.architectureReviewOutcome = 'approved' %}", "Next": "Architecture Review Done" },
+                        { "Condition": "{% $states.input.architectureReviewOutcome = 'skipped' %}",  "Next": "Architecture Review Done" }
+                      ],
+                      "Default": "Architecture Review Done"
+                    },
+                    "Architecture Review Done": { "Type": "Pass", "End": true }
+                  }
+                },
+                {
+                  "Comment": "BPMN: reviews-fork → Request Security Review → initial-security-review-gateway → reviews-join",
+                  "StartAt": "Request Security Review",
+                  "States": {
+                    "Request Security Review": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "Next": "Initial Security Review Outcome"
+                    },
+                    "Initial Security Review Outcome": {
+                      "Comment": "BPMN exclusiveGateway 'initial-security-review-gateway'.",
+                      "Type": "Choice",
+                      "Choices": [
+                        { "Condition": "{% $states.input.initialSecurityReviewOutcome = 'approved' %}", "Next": "Initial Security Review Done" },
+                        { "Condition": "{% $states.input.initialSecurityReviewOutcome = 'skipped' %}",  "Next": "Initial Security Review Done" }
+                      ],
+                      "Default": "Initial Security Review Done"
+                    },
+                    "Initial Security Review Done": { "Type": "Pass", "End": true }
+                  }
+                }
+              ],
+              "End": true
+            }
+          }
+        }
+      ],
+      "Next": "Phase 3: Development"
+    },
+
+    "Phase 3: Development": {
+      "Comment": "Maps to BPMN subProcess 'phase-3-development'. Sequential userTasks each followed by a Choice gateway. All tasks run in sequence inside the single branch.",
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Develop Project",
+          "States": {
+            "Develop Project": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Output": "{% $states.result.Payload %}",
+              "Arguments": { "Payload": "{% $states.input %}" },
+              "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+              "Next": "Development Outcome"
+            },
+            "Development Outcome": {
+              "Comment": "BPMN exclusiveGateway 'develop-gateway'.",
+              "Type": "Choice",
+              "Choices": [
+                { "Condition": "{% $states.input.developmentOutcome = 'approved' %}", "Next": "Write Unit Tests" },
+                { "Condition": "{% $states.input.developmentOutcome = 'skipped' %}",  "Next": "Write Unit Tests" }
+              ],
+              "Default": "Write Unit Tests"
+            },
+            "Write Unit Tests": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Output": "{% $states.result.Payload %}",
+              "Arguments": { "Payload": "{% $states.input %}" },
+              "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+              "Next": "Unit Tests Outcome"
+            },
+            "Unit Tests Outcome": {
+              "Comment": "BPMN exclusiveGateway 'unit-tests-gateway'.",
+              "Type": "Choice",
+              "Choices": [
+                { "Condition": "{% $states.input.unitTestsOutcome = 'approved' %}", "Next": "Write End-to-End Tests" },
+                { "Condition": "{% $states.input.unitTestsOutcome = 'skipped' %}",  "Next": "Write End-to-End Tests" }
+              ],
+              "Default": "Write End-to-End Tests"
+            },
+            "Write End-to-End Tests": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Output": "{% $states.result.Payload %}",
+              "Arguments": { "Payload": "{% $states.input %}" },
+              "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+              "Next": "E2E Tests Outcome"
+            },
+            "E2E Tests Outcome": {
+              "Comment": "BPMN exclusiveGateway 'e2e-tests-gateway'.",
+              "Type": "Choice",
+              "Choices": [
+                { "Condition": "{% $states.input.e2eTestsOutcome = 'approved' %}", "Next": "Phase 3 Done" },
+                { "Condition": "{% $states.input.e2eTestsOutcome = 'skipped' %}",  "Next": "Phase 3 Done" }
+              ],
+              "Default": "Phase 3 Done"
+            },
+            "Phase 3 Done": { "Type": "Pass", "End": true }
+          }
+        }
+      ],
+      "Next": "Phase 4: Resolve Security Findings"
+    },
+
+    "Phase 4: Resolve Security Findings": {
+      "Comment": "Maps to BPMN subProcess 'phase-4-security-findings'. The nested Parallel mirrors the parallelGateway scans-fork/scans-join with four concurrent branches. Three branches loop via waitForTaskToken (BPMN intermediateCatchEvent). Security sign-off runs sequentially after the nested Parallel completes.",
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Security Scans",
+          "States": {
+            "Security Scans": {
+              "Comment": "BPMN parallelGateway 'scans-fork/scans-join' — four concurrent branches.",
+              "Type": "Parallel",
+              "Branches": [
+                {
+                  "Comment": "BPMN: check-sonarcloud-threshold → sonarcloud-threshold-gateway → clear: scans-join | breached: sonarcloud-threshold-catch (intermediateCatchEvent) → recheck loop",
+                  "StartAt": "Check SonarCloud Threshold",
+                  "States": {
+                    "Check SonarCloud Threshold": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "Next": "SonarCloud Threshold Gateway"
+                    },
+                    "SonarCloud Threshold Gateway": {
+                      "Type": "Choice",
+                      "Choices": [
+                        { "Condition": "{% $states.input.sonarcloudThresholdClear = true %}", "Next": "SonarCloud Clear" }
+                      ],
+                      "Default": "Await SonarCloud Cleared"
+                    },
+                    "Await SonarCloud Cleared": {
+                      "Comment": "BPMN intermediateCatchEvent 'sonarcloud-threshold-catch'. Pauses until an external callback sends the task token back.",
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+                      "Arguments": {
+                        "Payload": {
+                          "taskToken": "{% $states.context.Task.Token %}",
+                          "serviceId": "{% $states.input.serviceId %}"
+                        }
+                      },
+                      "Next": "Check SonarCloud Threshold"
+                    },
+                    "SonarCloud Clear": { "Type": "Pass", "End": true }
+                  }
+                },
+                {
+                  "Comment": "BPMN: check-snyk-threshold → snyk-threshold-gateway → clear: scans-join | breached: snyk-threshold-catch → recheck loop",
+                  "StartAt": "Check Snyk Threshold",
+                  "States": {
+                    "Check Snyk Threshold": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "Next": "Snyk Threshold Gateway"
+                    },
+                    "Snyk Threshold Gateway": {
+                      "Type": "Choice",
+                      "Choices": [
+                        { "Condition": "{% $states.input.snykThresholdClear = true %}", "Next": "Snyk Clear" }
+                      ],
+                      "Default": "Await Snyk Cleared"
+                    },
+                    "Await Snyk Cleared": {
+                      "Comment": "BPMN intermediateCatchEvent 'snyk-threshold-catch'.",
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+                      "Arguments": {
+                        "Payload": {
+                          "taskToken": "{% $states.context.Task.Token %}",
+                          "serviceId": "{% $states.input.serviceId %}"
+                        }
+                      },
+                      "Next": "Check Snyk Threshold"
+                    },
+                    "Snyk Clear": { "Type": "Pass", "End": true }
+                  }
+                },
+                {
+                  "Comment": "BPMN: check-gitguardian-threshold → gitguardian-threshold-gateway → clear: scans-join | breached: gitguardian-threshold-catch → recheck loop",
+                  "StartAt": "Check GitGuardian Threshold",
+                  "States": {
+                    "Check GitGuardian Threshold": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "Next": "GitGuardian Threshold Gateway"
+                    },
+                    "GitGuardian Threshold Gateway": {
+                      "Type": "Choice",
+                      "Choices": [
+                        { "Condition": "{% $states.input.gitguardianThresholdClear = true %}", "Next": "GitGuardian Clear" }
+                      ],
+                      "Default": "Await GitGuardian Cleared"
+                    },
+                    "Await GitGuardian Cleared": {
+                      "Comment": "BPMN intermediateCatchEvent 'gitguardian-threshold-catch'.",
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+                      "Arguments": {
+                        "Payload": {
+                          "taskToken": "{% $states.context.Task.Token %}",
+                          "serviceId": "{% $states.input.serviceId %}"
+                        }
+                      },
+                      "Next": "Check GitGuardian Threshold"
+                    },
+                    "GitGuardian Clear": { "Type": "Pass", "End": true }
+                  }
+                },
+                {
+                  "Comment": "BPMN serviceTask 'finalize-grafana-cloud' — straight through, no loop.",
+                  "StartAt": "Finalize Grafana Cloud",
+                  "States": {
+                    "Finalize Grafana Cloud": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                }
+              ],
+              "Next": "Request Security Sign-off"
+            },
+            "Request Security Sign-off": {
+              "Comment": "BPMN userTask 'request-security-signoff', after scans-join gateway.",
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Output": "{% $states.result.Payload %}",
+              "Arguments": { "Payload": "{% $states.input %}" },
+              "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+              "Next": "Security Sign-off Outcome"
+            },
+            "Security Sign-off Outcome": {
+              "Comment": "BPMN exclusiveGateway 'security-signoff-gateway'.",
+              "Type": "Choice",
+              "Choices": [
+                { "Condition": "{% $states.input.securitySignoffOutcome = 'approved' %}", "Next": "Phase 4 Done" },
+                { "Condition": "{% $states.input.securitySignoffOutcome = 'skipped' %}",  "Next": "Phase 4 Done" }
+              ],
+              "Default": "Phase 4 Done"
+            },
+            "Phase 4 Done": { "Type": "Pass", "End": true }
+          }
+        }
+      ],
+      "Next": "Phase 5: Production Deployment"
+    },
+
+    "Phase 5: Production Deployment": {
+      "Comment": "Maps to BPMN subProcess 'phase-5-production'. Sequential tasks inside the single branch.",
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Deploy to Production",
+          "States": {
+            "Deploy to Production": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Output": "{% $states.result.Payload %}",
+              "Arguments": { "Payload": "{% $states.input %}" },
+              "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+              "Next": "Post-Deploy Health Check"
+            },
+            "Post-Deploy Health Check": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Output": "{% $states.result.Payload %}",
+              "Arguments": { "Payload": "{% $states.input %}" },
+              "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+              "End": true
+            }
+          }
+        }
+      ],
+      "End": true
+    }
+
+  },
+  "QueryLanguage": "JSONata"
+}

@@ -1,0 +1,199 @@
+{
+  "Comment": "Create Backend Service (Simple) — converted from create-backend-service-simple.bpmn. Each BPMN subProcess becomes a single-branch Parallel state for grouping. Where the subprocess contains a parallelGateway fork/join, that becomes a nested Parallel inside the branch.",
+  "StartAt": "Phase 1: Initialize Reviews",
+  "States": {
+
+    "Phase 1: Initialize Reviews": {
+      "Comment": "Maps to BPMN subProcess 'phase-1-initialize-reviews'. Single branch groups the phase; nested Parallel mirrors the parallelGateway fork/join inside the subprocess.",
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Phase 1 Tasks",
+          "States": {
+            "Phase 1 Tasks": {
+              "Type": "Parallel",
+              "Branches": [
+                {
+                  "Comment": "BPMN: p1-fork → Create Threat Model Diagram → Create Application Architecture Review → p1-join",
+                  "StartAt": "Create Threat Model Diagram",
+                  "States": {
+                    "Create Threat Model Diagram": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "Next": "Create Application Architecture Review"
+                    },
+                    "Create Application Architecture Review": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "Comment": "BPMN: p1-fork → Create Security Application Review → p1-join",
+                  "StartAt": "Create Security Application Review",
+                  "States": {
+                    "Create Security Application Review": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "Comment": "BPMN: p1-fork → Setup SonarQube → p1-join",
+                  "StartAt": "Setup SonarQube",
+                  "States": {
+                    "Setup SonarQube": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                }
+              ],
+              "End": true
+            }
+          }
+        }
+      ],
+      "Next": "Phase 2: Build Application"
+    },
+
+    "Phase 2: Build Application": {
+      "Comment": "Maps to BPMN subProcess 'phase-2-build-application'. Single branch groups the phase; nested Parallel mirrors the parallelGateway fork/join inside the subprocess.",
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Phase 2 Tasks",
+          "States": {
+            "Phase 2 Tasks": {
+              "Type": "Parallel",
+              "Branches": [
+                {
+                  "Comment": "BPMN: p2-fork → Build Application → p2-join",
+                  "StartAt": "Build Application",
+                  "States": {
+                    "Build Application": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "Comment": "BPMN: p2-fork → Write E2E Tests → p2-join",
+                  "StartAt": "Write E2E Tests",
+                  "States": {
+                    "Write E2E Tests": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "Comment": "BPMN: p2-fork → Write Unit Tests → p2-join",
+                  "StartAt": "Write Unit Tests",
+                  "States": {
+                    "Write Unit Tests": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                }
+              ],
+              "End": true
+            }
+          }
+        }
+      ],
+      "Next": "Phase 3: Complete Application"
+    },
+
+    "Phase 3: Complete Application": {
+      "Comment": "Maps to BPMN subProcess 'phase-3-complete-application'. Single branch groups the phase; nested Parallel mirrors the parallelGateway fork/join inside the subprocess.",
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Phase 3 Tasks",
+          "States": {
+            "Phase 3 Tasks": {
+              "Type": "Parallel",
+              "Branches": [
+                {
+                  "Comment": "BPMN: p3-fork → Resolve Security Application Review Findings → p3-join",
+                  "StartAt": "Resolve Security Application Review Findings",
+                  "States": {
+                    "Resolve Security Application Review Findings": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "Comment": "BPMN: p3-fork → Resolve SonarQube Findings → p3-join",
+                  "StartAt": "Resolve SonarQube Findings",
+                  "States": {
+                    "Resolve SonarQube Findings": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "Comment": "BPMN: p3-fork → Deploy to Dev → p3-join",
+                  "StartAt": "Deploy to Dev",
+                  "States": {
+                    "Deploy to Dev": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Output": "{% $states.result.Payload %}",
+                      "Arguments": { "Payload": "{% $states.input %}" },
+                      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }],
+                      "End": true
+                    }
+                  }
+                }
+              ],
+              "End": true
+            }
+          }
+        }
+      ],
+      "End": true
+    }
+
+  },
+  "QueryLanguage": "JSONata"
+}

@@ -24,11 +24,21 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <bpmn:incoming>f3</bpmn:incoming>
         <bpmn:outgoing>f4</bpmn:outgoing>
       </bpmn:userTask>
-      <bpmn:endEvent id="e"><bpmn:incoming>f4</bpmn:incoming></bpmn:endEvent>
+      <bpmn:userTask id="log-ticket" name="Log Ticket">
+        <bpmn:extensionElements>
+          <zeebe:taskHeaders>
+            <zeebe:header key="branchlineFormKey" value="log-ticket" />
+          </zeebe:taskHeaders>
+        </bpmn:extensionElements>
+        <bpmn:incoming>f4</bpmn:incoming>
+        <bpmn:outgoing>f5</bpmn:outgoing>
+      </bpmn:userTask>
+      <bpmn:endEvent id="e"><bpmn:incoming>f5</bpmn:incoming></bpmn:endEvent>
       <bpmn:sequenceFlow id="f1" sourceRef="s" targetRef="review" />
       <bpmn:sequenceFlow id="f2" sourceRef="review" targetRef="self" />
       <bpmn:sequenceFlow id="f3" sourceRef="self" targetRef="dynamic" />
-      <bpmn:sequenceFlow id="f4" sourceRef="dynamic" targetRef="e" />
+      <bpmn:sequenceFlow id="f4" sourceRef="dynamic" targetRef="log-ticket" />
+      <bpmn:sequenceFlow id="f5" sourceRef="log-ticket" targetRef="e" />
     </bpmn:subProcess>
   </bpmn:process>
 </bpmn:definitions>`;
@@ -43,5 +53,17 @@ describe('BpmnParser candidateGroups', () => {
     expect(byId.self.candidateGroups).toBeUndefined();
     // A FEEL expression (=someVar) is treated as no static group
     expect(byId.dynamic.candidateGroups).toBeUndefined();
+  });
+});
+
+describe('BpmnParser formKey', () => {
+  it('parses the branchlineFormKey task header, leaves other tasks unset', () => {
+    const blocks = buildHierarchyFromBpmn(parseBpmnXml(xml), [], []);
+    const tasks = blocks.flatMap(b => b.steps.flatMap(s => s.tasks));
+    const byId = Object.fromEntries(tasks.map(t => [t.id, t]));
+
+    expect(byId['log-ticket'].formKey).toBe('log-ticket');
+    expect(byId.review.formKey).toBeUndefined();
+    expect(byId.self.formKey).toBeUndefined();
   });
 });
