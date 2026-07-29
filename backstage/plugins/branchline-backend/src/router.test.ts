@@ -49,7 +49,7 @@ function buildApp(overrides?: {
     buildHierarchy: jest.fn().mockResolvedValue([]),
     buildFlowGraph: jest.fn().mockResolvedValue(undefined),
     getFlownodeProgress: jest.fn().mockResolvedValue(new Map()),
-    getTaskCandidateGroups: jest.fn().mockResolvedValue([]),
+    getTaskCandidateGroups: jest.fn().mockResolvedValue({ groups: [], unresolved: false }),
     ...overrides?.orchestrator,
   };
   const membership = {
@@ -216,6 +216,76 @@ describe('createRouter', () => {
     });
   });
 
+  describe('completion variable safety', () => {
+    it('rejects reserved variable keys on a self-serve task', async () => {
+      const { app } = buildApp();
+      const res = await request(app)
+        .post('/workflows/wf-1/tasks/submit/complete')
+        .send({ variables: { branchlineSkipped: true } });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects reserved variable keys on a gated task', async () => {
+      const { app } = buildApp({
+        orchestrator: {
+          getTaskCandidateGroups: jest.fn().mockResolvedValue({ groups: ['arb'], unresolved: false }),
+        },
+        membership: {
+          getGroupsForUser: jest.fn().mockResolvedValue(['group:default/arb']),
+        },
+      });
+      const res = await request(app)
+        .post('/workflows/wf-1/tasks/arch-review/complete')
+        .send({ variables: { branchlineSkipReason: 'nope' } });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects any variables on a self-serve (ungated) task', async () => {
+      const { app } = buildApp();
+      const res = await request(app)
+        .post('/workflows/wf-1/tasks/submit/complete')
+        .send({ variables: { legalApproved: true } });
+      expect(res.status).toBe(400);
+    });
+
+    it('allows no variables on a self-serve task', async () => {
+      const { app } = buildApp();
+      const res = await request(app).post('/workflows/wf-1/tasks/submit/complete');
+      expect(res.status).toBe(200);
+    });
+
+    it('allows variables on a gated task for an authorized member', async () => {
+      const completeTask = jest.fn();
+      const { app } = buildApp({
+        orchestrator: {
+          getTaskCandidateGroups: jest.fn().mockResolvedValue({ groups: ['arb'], unresolved: false }),
+          completeTask,
+        },
+        membership: {
+          getGroupsForUser: jest.fn().mockResolvedValue(['group:default/arb']),
+        },
+      });
+      const res = await request(app)
+        .post('/workflows/wf-1/tasks/arch-review/complete')
+        .send({ variables: { legalApproved: true } });
+      expect(res.status).toBe(200);
+      expect(completeTask).toHaveBeenCalledWith('ck-1', 'arch-review', { legalApproved: true });
+    });
+
+    it('denies completion when candidateGroups is unresolved (FEEL expression), regardless of membership', async () => {
+      const { app } = buildApp({
+        orchestrator: {
+          getTaskCandidateGroups: jest.fn().mockResolvedValue({ groups: [], unresolved: true }),
+        },
+        membership: {
+          getGroupsForUser: jest.fn().mockResolvedValue(['group:default/arb']),
+        },
+      });
+      const res = await request(app).post('/workflows/wf-1/tasks/dynamic-review/complete');
+      expect(res.status).toBe(403);
+    });
+  });
+
   describe('audit trail', () => {
     it('assembles milestone events in ascending time order', async () => {
       const { app } = buildApp({
@@ -293,7 +363,9 @@ describe('createRouter', () => {
   describe('per-task team gate (candidateGroups)', () => {
     it('403s when the user is not in the task candidate group', async () => {
       const { app } = buildApp({
-        orchestrator: { getTaskCandidateGroups: jest.fn().mockResolvedValue(['arb']) },
+        orchestrator: {
+          getTaskCandidateGroups: jest.fn().mockResolvedValue({ groups: ['arb'], unresolved: false }),
+        },
         membership: {
           getGroupsForUser: jest.fn().mockResolvedValue(['group:default/developers']),
         },
@@ -304,7 +376,9 @@ describe('createRouter', () => {
 
     it('allows when the user shares the candidate group (short-name match)', async () => {
       const { app } = buildApp({
-        orchestrator: { getTaskCandidateGroups: jest.fn().mockResolvedValue(['arb']) },
+        orchestrator: {
+          getTaskCandidateGroups: jest.fn().mockResolvedValue({ groups: ['arb'], unresolved: false }),
+        },
         membership: {
           getGroupsForUser: jest.fn().mockResolvedValue(['group:default/arb']),
         },
@@ -332,6 +406,12 @@ describe('createRouter', () => {
               tasks: [
                 { id: 'arch-review', label: 'Arch', status: 'active', candidateGroups: ['arb'] },
                 { id: 'submit', label: 'Submit', status: 'active' },
+                {
+                  id: 'dynamic-review',
+                  label: 'Dynamic',
+                  status: 'active',
+                  candidateGroupsUnresolved: true,
+                },
               ],
             },
           ],
@@ -349,6 +429,7 @@ describe('createRouter', () => {
       const byId = Object.fromEntries(tasks.map((t: any) => [t.id, t]));
       expect(byId['arch-review'].canAct).toBe(false); // not in arb
       expect(byId.submit.canAct).toBe(true); // ungrouped self-serve
+      expect(byId['dynamic-review'].canAct).toBe(false); // unresolved (FEEL) — deny by default
     });
   });
 });

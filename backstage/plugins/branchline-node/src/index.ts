@@ -56,9 +56,15 @@ export interface WorkflowOrchestrator {
    *  (Camunda: completion variables; Step Functions: a flag in the SendTaskSuccess output). */
   skipTask(orchestratorInstanceKey: string, taskId: string, reason: string): Promise<void>;
 
-  /** Resolve the groups allowed to act on a task. Empty array means self-serve
-   *  (no restriction). */
-  getTaskCandidateGroups(definitionId: string, taskId: string): Promise<string[]>;
+  /** Resolve the groups allowed to act on a task. Empty `groups` means self-serve
+   *  (no restriction). `unresolved: true` means the engine will resolve candidate
+   *  groups dynamically at runtime (e.g. a BPMN FEEL expression) and this SPI
+   *  cannot verify membership — callers must treat this as deny-by-default,
+   *  not as self-serve. */
+  getTaskCandidateGroups(
+    definitionId: string,
+    taskId: string,
+  ): Promise<{ groups: string[]; unresolved?: boolean }>;
 
   getFlownodeProgress(
     orchestratorInstanceKeys: string[],

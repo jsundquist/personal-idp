@@ -81,6 +81,10 @@ export interface Task {
   feedbackCounts?: FeedbackCounts;
   /** Responsible groups from the BPMN zeebe:assignmentDefinition candidateGroups (short names) */
   candidateGroups?: string[];
+  /** True when the BPMN candidateGroups is a FEEL expression Branchline cannot
+   *  resolve; such a task is deny-by-default (not self-serve) even though
+   *  `candidateGroups` is empty. */
+  candidateGroupsUnresolved?: boolean;
   /** Consumer-registered custom form to render for this task, from the BPMN zeebe:taskHeaders `branchlineFormKey` entry */
   formKey?: string;
   /**

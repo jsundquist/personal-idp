@@ -27,6 +27,10 @@ const completeSchema = z.object({
   variables: z.record(z.unknown()).optional(),
 });
 
+// Internal control keys the orchestrator layer sets itself (e.g. to signal a
+// skip) — never accepted from a caller-supplied `variables` payload.
+const RESERVED_VARIABLE_KEYS = new Set(['branchlineSkipped', 'branchlineSkipReason']);
+
 // Compare group refs by their short name — candidateGroups in BPMN are bare
 // names ("arb"); getGroupsForUser returns full refs ("group:default/arb").
 const shortGroupName = (ref: string): string =>
@@ -84,14 +88,22 @@ export function createRouter(opts: {
 
   // Enforce the task's candidate groups: a task with candidate groups can
   // only be acted on by a member of one of them; an ungrouped task is self-serve.
+  // Returns whether the task was gated, so callers can decide whether it's safe
+  // to accept caller-supplied process variables (see sanitizeCompletionVariables).
   async function assertCanActOnTask(
     userEntityRef: string,
     definitionId: string,
     taskId: string,
-  ): Promise<void> {
-    const groups = await orchestrator.getTaskCandidateGroups(definitionId, taskId);
+  ): Promise<{ gated: boolean }> {
+    const { groups, unresolved } = await orchestrator.getTaskCandidateGroups(definitionId, taskId);
+    if (unresolved) {
+      throw new NotAllowedError(
+        "This task's candidate groups are dynamically assigned by the workflow engine " +
+          'and cannot be verified by Branchline; it cannot be completed from this UI.',
+      );
+    }
     if (groups.length === 0) {
-      return;
+      return { gated: false };
     }
     const userGroups = await membership.getGroupsForUser(userEntityRef);
     const userShort = new Set(userGroups.map(shortGroupName));
@@ -100,6 +112,32 @@ export function createRouter(opts: {
         `This task is restricted to members of: ${groups.join(', ')}`,
       );
     }
+    return { gated: true };
+  }
+
+  // Task-completion `variables` become shared, instance-wide process state (not
+  // scoped to the completing task), so we only allow them on tasks the caller
+  // was actually verified against a specific candidate group for — self-serve
+  // (ungated) tasks may not inject arbitrary process state. Reject outright
+  // rather than silently stripping, so a misbehaving caller sees the problem.
+  function sanitizeCompletionVariables(
+    variables: Record<string, unknown> | undefined,
+    opts: { taskIsGated: boolean },
+  ): Record<string, unknown> | undefined {
+    if (!variables) {
+      return undefined;
+    }
+    const reservedHit = Object.keys(variables).find(k => RESERVED_VARIABLE_KEYS.has(k));
+    if (reservedHit) {
+      throw new InputError(`'${reservedHit}' is a reserved variable name and cannot be set directly`);
+    }
+    if (!opts.taskIsGated && Object.keys(variables).length > 0) {
+      throw new InputError(
+        'This task is self-serve (no candidate group restriction); it cannot set process variables. ' +
+          'Only tasks restricted to a specific group may supply variables.',
+      );
+    }
+    return variables;
   }
 
   // GET /definitions — list workflow definitions from the active orchestrator
@@ -242,7 +280,8 @@ export function createRouter(opts: {
           for (const task of step.tasks) {
             const groups = task.candidateGroups ?? [];
             task.canAct =
-              groups.length === 0 || groups.some(g => userShort.has(shortGroupName(g)));
+              !task.candidateGroupsUnresolved &&
+              (groups.length === 0 || groups.some(g => userShort.has(shortGroupName(g))));
           }
         }
       }
@@ -317,7 +356,13 @@ export function createRouter(opts: {
     const instance = await db.getInstance(req.params.id);
 
     // Per-task team gate: only members of the task's candidateGroups may act.
-    await assertCanActOnTask(userEntityRef, instance.definitionId, req.params.taskId);
+    const { gated } = await assertCanActOnTask(userEntityRef, instance.definitionId, req.params.taskId);
+
+    // Task-completion variables become shared, instance-wide process state, so
+    // only accept them from a task the caller was verified against a specific
+    // group for. Must happen before the try/catch below so InputError isn't
+    // swallowed by the orchestrator-call failure handler.
+    const variables = sanitizeCompletionVariables(parsed.data.variables, { taskIsGated: gated });
 
     // Completion-blocking rule: a gate cannot be completed while it has open
     // feedback. Every feedback item must be resolved or excepted first.
@@ -332,7 +377,7 @@ export function createRouter(opts: {
       await orchestrator.completeTask(
         instance.orchestratorInstanceKey,
         req.params.taskId,
-        parsed.data.variables,
+        variables,
       );
     } catch (err) {
       logger.warn('Could not signal task completion to the orchestrator', err as Error);

@@ -10,6 +10,7 @@ interface FlowElement {
   type: string;
   documentation?: string;
   candidateGroups?: string[];
+  candidateGroupsUnresolved?: boolean;
   formKey?: string;
 }
 
@@ -18,6 +19,7 @@ interface TaskRef {
   name?: string;
   documentation?: string;
   candidateGroups?: string[];
+  candidateGroupsUnresolved?: boolean;
   formKey?: string;
 }
 
@@ -59,20 +61,23 @@ function getDocumentation(el: Element): string | undefined {
 
 /**
  * Read literal candidateGroups from a task's zeebe:assignmentDefinition.
- * FEEL expression values (starting with '=') are treated as "no static group".
+ * FEEL expression values (starting with '=') are dynamically resolved by the
+ * engine at runtime and cannot be read statically — callers must treat these
+ * as deny-by-default (see `unresolved`), not as "no restriction".
  */
-function getCandidateGroups(el: Element): string[] | undefined {
+function getCandidateGroups(el: Element): { groups?: string[]; unresolved?: boolean } {
   for (const child of childElements(el)) {
     if (child.localName !== 'extensionElements') continue;
     for (const ext of childElements(child)) {
       if (ext.localName !== 'assignmentDefinition') continue;
       const raw = ext.getAttribute('candidateGroups') ?? '';
-      if (!raw || raw.trim().startsWith('=')) return undefined;
+      if (!raw) return {};
+      if (raw.trim().startsWith('=')) return { unresolved: true };
       const groups = raw.split(',').map(g => g.trim()).filter(Boolean);
-      return groups.length ? groups : undefined;
+      return { groups: groups.length ? groups : undefined };
     }
   }
-  return undefined;
+  return {};
 }
 
 const FORM_KEY_HEADER = 'branchlineFormKey';
@@ -112,12 +117,14 @@ function parseSubProcessSteps(el: Element): StepSpec[] {
     if (localName === 'startEvent') {
       startId = id;
     } else if (TASK_TYPES.has(localName)) {
+      const cg = getCandidateGroups(child);
       elements.set(id, {
         id,
         name: attr(child, 'name') || undefined,
         type: localName,
         documentation: getDocumentation(child),
-        candidateGroups: getCandidateGroups(child),
+        candidateGroups: cg.groups,
+        candidateGroupsUnresolved: cg.unresolved,
         formKey: getFormKey(child),
       });
       continue;
@@ -146,7 +153,7 @@ function parseSubProcessSteps(el: Element): StepSpec[] {
       const node = elements.get(cur);
       if (!node) break;
       if (TASK_TYPES.has(node.type)) {
-        taskRefs.push({ id: cur, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups, formKey: node.formKey });
+        taskRefs.push({ id: cur, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups, candidateGroupsUnresolved: node.candidateGroupsUnresolved, formKey: node.formKey });
         cur = (outgoing.get(cur) ?? [])[0] ?? '';
       } else if (node.type === mergeType) {
         mergeId = cur;
@@ -168,7 +175,7 @@ function parseSubProcessSteps(el: Element): StepSpec[] {
     const nexts = outgoing.get(nodeId) ?? [];
 
     if (TASK_TYPES.has(node.type)) {
-      steps.push({ id: nodeId, name: node.name, taskRefs: [{ id: nodeId, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups, formKey: node.formKey }] });
+      steps.push({ id: nodeId, name: node.name, taskRefs: [{ id: nodeId, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups, candidateGroupsUnresolved: node.candidateGroupsUnresolved, formKey: node.formKey }] });
       traverse(nexts[0] ?? '');
     } else if (node.type === 'exclusiveGateway' && nexts.length > 1) {
       const allTaskRefs: TaskRef[] = [];
@@ -220,7 +227,7 @@ function parseSubProcessSteps(el: Element): StepSpec[] {
   if (steps.length === 0) {
     for (const [id, node] of elements) {
       if (TASK_TYPES.has(node.type)) {
-        steps.push({ id, name: node.name, taskRefs: [{ id, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups, formKey: node.formKey }] });
+        steps.push({ id, name: node.name, taskRefs: [{ id, name: node.name, documentation: node.documentation, candidateGroups: node.candidateGroups, candidateGroupsUnresolved: node.candidateGroupsUnresolved, formKey: node.formKey }] });
       }
     }
   }
@@ -297,6 +304,7 @@ export function buildHierarchyFromBpmn(
               status,
               ...(ref.documentation && { documentation: ref.documentation }),
               ...(ref.candidateGroups && { candidateGroups: ref.candidateGroups }),
+              ...(ref.candidateGroupsUnresolved && { candidateGroupsUnresolved: true }),
               ...(ref.formKey && { formKey: ref.formKey }),
               ...(action?.action === 'completed' && {
                 completedBy: action.actor,
@@ -327,6 +335,7 @@ export function buildHierarchyFromBpmn(
             status,
             ...(ref.documentation && { documentation: ref.documentation }),
             ...(ref.candidateGroups && { candidateGroups: ref.candidateGroups }),
+            ...(ref.candidateGroupsUnresolved && { candidateGroupsUnresolved: true }),
             ...(ref.formKey && { formKey: ref.formKey }),
             ...(action?.action === 'completed' && {
               completedBy: action.actor,

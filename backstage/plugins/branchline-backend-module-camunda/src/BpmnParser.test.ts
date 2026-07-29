@@ -50,9 +50,13 @@ describe('BpmnParser candidateGroups', () => {
     const byId = Object.fromEntries(tasks.map(t => [t.id, t]));
 
     expect(byId.review.candidateGroups).toEqual(['arb', 'security']);
+    expect(byId.review.candidateGroupsUnresolved).toBeFalsy();
     expect(byId.self.candidateGroups).toBeUndefined();
-    // A FEEL expression (=someVar) is treated as no static group
+    expect(byId.self.candidateGroupsUnresolved).toBeFalsy();
+    // A FEEL expression (=someVar) cannot be statically resolved — flagged so
+    // callers deny by default instead of treating it as self-serve.
     expect(byId.dynamic.candidateGroups).toBeUndefined();
+    expect(byId.dynamic.candidateGroupsUnresolved).toBe(true);
   });
 });
 

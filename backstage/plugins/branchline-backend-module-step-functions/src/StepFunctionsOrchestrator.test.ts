@@ -172,8 +172,11 @@ describe('StepFunctionsOrchestrator', () => {
     });
     expect(
       await orchestrator.getTaskCandidateGroups('create-backend-api', 'Request Architecture Review'),
-    ).toEqual(['architects']);
-    expect(await orchestrator.getTaskCandidateGroups('create-backend-api', 'Untracked Task')).toEqual([]);
+    ).toEqual({ groups: ['architects'], unresolved: false });
+    expect(await orchestrator.getTaskCandidateGroups('create-backend-api', 'Untracked Task')).toEqual({
+      groups: [],
+      unresolved: false,
+    });
   });
 
   it('buildHierarchy returns [] (no ASL equivalent of the legacy hierarchy)', async () => {

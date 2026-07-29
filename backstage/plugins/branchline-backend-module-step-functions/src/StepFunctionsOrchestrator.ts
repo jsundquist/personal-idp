@@ -138,8 +138,11 @@ export class StepFunctionsOrchestrator implements WorkflowOrchestrator {
     });
   }
 
-  async getTaskCandidateGroups(definitionId: string, taskId: string): Promise<string[]> {
-    return this.candidateGroups.resolve(definitionId, taskId);
+  async getTaskCandidateGroups(
+    definitionId: string,
+    taskId: string,
+  ): Promise<{ groups: string[]; unresolved?: boolean }> {
+    return { groups: this.candidateGroups.resolve(definitionId, taskId), unresolved: false };
   }
 
   private async fetchDefinition(stateMachineArn: string): Promise<AslDefinition> {

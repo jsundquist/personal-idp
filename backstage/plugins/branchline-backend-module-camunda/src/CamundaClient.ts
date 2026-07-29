@@ -384,20 +384,25 @@ export class CamundaClient implements WorkflowOrchestrator {
 
   /**
    * Resolve the candidateGroups declared on a single task in a definition's BPMN.
-   * Returns [] when the task is ungrouped (self-serve) or not found.
+   * Returns empty `groups` when the task is ungrouped (self-serve) or not found.
+   * `unresolved: true` means the task's candidateGroups is a FEEL expression
+   * this parser cannot statically resolve — treat as deny-by-default.
    */
-  async getTaskCandidateGroups(bpmnProcessId: string, taskId: string): Promise<string[]> {
+  async getTaskCandidateGroups(
+    bpmnProcessId: string,
+    taskId: string,
+  ): Promise<{ groups: string[]; unresolved?: boolean }> {
     const phases = await this.getBpmnNodes(bpmnProcessId);
     for (const phase of phases) {
       for (const step of phase.stepSpecs) {
         for (const ref of step.taskRefs) {
           if (ref.id === taskId) {
-            return ref.candidateGroups ?? [];
+            return { groups: ref.candidateGroups ?? [], unresolved: ref.candidateGroupsUnresolved };
           }
         }
       }
     }
-    return [];
+    return { groups: [], unresolved: false };
   }
 
   private async getBpmnNodes(bpmnProcessId: string): Promise<ReturnType<typeof parseBpmnXml>> {
