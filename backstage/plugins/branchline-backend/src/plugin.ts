@@ -61,8 +61,7 @@ export const branchlinePlugin = createBackendPlugin({
           resourceRef: workflowInstanceRef,
           permissions: branchlinePermissions,
           rules: [isOwnerGroupMember],
-          getResources: resourceRefs =>
-            Promise.all(resourceRefs.map(id => db.getInstance(id).catch(() => undefined))),
+          getResources: resourceRefs => db.getInstances(resourceRefs),
         });
 
         const router = createRouter({ httpAuth, db, orchestrator, membership, permissions, logger });

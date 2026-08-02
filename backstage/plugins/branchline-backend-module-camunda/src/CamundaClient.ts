@@ -44,6 +44,7 @@ export class CamundaClient implements WorkflowOrchestrator {
   private sessionCache: SessionCache | null = null;
   private tasklistSessionCache: SessionCache | null = null;
   private bpmnCache = new Map<string, ReturnType<typeof parseBpmnXml>>(); // keyed by definition key, not bpmnProcessId
+  private xmlCache = new Map<string, string>(); // raw XML, same key space as bpmnCache
 
   constructor(config: Config) {
     const camundaConfig = config.getConfig('branchline.camunda');
@@ -226,11 +227,27 @@ export class CamundaClient implements WorkflowOrchestrator {
         try {
           const instances = await this.getElementInstances(key);
           const phases = instances.filter(i => i.type === 'SUB_PROCESS');
-          return {
-            key,
-            completedPhases: phases.filter(p => p.state === 'COMPLETED').length,
-            totalPhases: phases.length,
-          };
+          const completedPhases = phases.filter(p => p.state === 'COMPLETED').length;
+
+          // Static total from the parsed BPMN (one entry per subProcess), not
+          // the live count of SUB_PROCESS instances created so far — the
+          // latter grows as execution proceeds, so an instance one phase into
+          // a five-phase workflow would otherwise report "1 of 1" instead of
+          // "1 of 5". Falls back to the live count if no instance has
+          // reached a phase yet (nothing to key the BPMN lookup on) or if the
+          // BPMN can't be fetched.
+          const definitionKey = instances[0]?.processDefinitionKey;
+          let totalPhases = phases.length;
+          if (definitionKey) {
+            try {
+              const bpmnNodes = await this.getBpmnNodesByKey(definitionKey, definitionKey);
+              totalPhases = bpmnNodes.length;
+            } catch {
+              // keep the live-count fallback
+            }
+          }
+
+          return { key, completedPhases, totalPhases };
         } catch {
           return { key, completedPhases: 0, totalPhases: 0 };
         }
@@ -330,6 +347,9 @@ export class CamundaClient implements WorkflowOrchestrator {
       headers: { ...auth, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    if (res.status === 401 || res.status === 403) {
+      this.tasklistSessionCache = null;
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(`Camunda Tasklist POST ${path} failed: ${res.status} ${res.statusText} — ${text}`);
@@ -344,6 +364,9 @@ export class CamundaClient implements WorkflowOrchestrator {
       headers: { ...auth, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    if (res.status === 401 || res.status === 403) {
+      this.tasklistSessionCache = null;
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(`Camunda Tasklist PATCH ${path} failed: ${res.status} ${res.statusText} — ${text}`);
@@ -407,9 +430,26 @@ export class CamundaClient implements WorkflowOrchestrator {
 
   private async getBpmnNodes(bpmnProcessId: string): Promise<ReturnType<typeof parseBpmnXml>> {
     const key = await this.getDefinitionKey(bpmnProcessId);
+    return this.getBpmnNodesByKey(key, bpmnProcessId);
+  }
+
+  private async getBpmnNodesByKey(key: string, bpmnProcessId: string): Promise<ReturnType<typeof parseBpmnXml>> {
     if (this.bpmnCache.has(key)) {
       return this.bpmnCache.get(key)!;
     }
+    const xml = await this.getBpmnXml(key, bpmnProcessId);
+    const nodes = parseBpmnXml(xml);
+    this.bpmnCache.set(key, nodes);
+    return nodes;
+  }
+
+  /** Raw BPMN XML fetch, cached by definition key — shared by getBpmnNodesByKey
+   *  (parses into the legacy hierarchy's PhaseSpec[]) and buildFlowGraph
+   *  (parses into a FlowGraph), so a request that calls both only fetches the
+   *  XML once instead of twice. */
+  private async getBpmnXml(key: string, bpmnProcessId: string): Promise<string> {
+    const cached = this.xmlCache.get(key);
+    if (cached) return cached;
     const auth = await this.operateAuthHeaders();
     const res = await fetch(`${this.operateBaseUrl}/v1/process-definitions/${key}/xml`, {
       headers: auth,
@@ -418,9 +458,8 @@ export class CamundaClient implements WorkflowOrchestrator {
       throw new Error(`Failed to fetch BPMN XML for ${bpmnProcessId}: ${res.status}`);
     }
     const xml = await res.text();
-    const nodes = parseBpmnXml(xml);
-    this.bpmnCache.set(key, nodes);
-    return nodes;
+    this.xmlCache.set(key, xml);
+    return xml;
   }
 
   async buildHierarchy(
@@ -441,15 +480,10 @@ export class CamundaClient implements WorkflowOrchestrator {
     actions: TaskActionInput[],
   ): Promise<FlowGraph> {
     const key = await this.getDefinitionKey(bpmnProcessId);
-    const auth = await this.operateAuthHeaders();
-    const [xmlRes, instances] = await Promise.all([
-      fetch(`${this.operateBaseUrl}/v1/process-definitions/${key}/xml`, { headers: auth }),
+    const [xml, instances] = await Promise.all([
+      this.getBpmnXml(key, bpmnProcessId),
       this.getElementInstances(processInstanceKey),
     ]);
-    if (!xmlRes.ok) {
-      throw new Error(`Failed to fetch BPMN XML for ${bpmnProcessId}: ${xmlRes.status}`);
-    }
-    const xml = await xmlRes.text();
     return bpmnToFlowGraph(xml, instances, actions);
   }
 }

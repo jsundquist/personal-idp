@@ -39,3 +39,22 @@ export function listPhaseNames(definition: AslDefinition): string[] {
     .filter(([, state]) => state.Type === 'Parallel' && (state.Branches?.length ?? 0) === 1)
     .map(([name]) => name);
 }
+
+/** Find a state by name anywhere in the definition, recursing into nested
+ *  Parallel branches — a Task state may be nested arbitrarily deep inside
+ *  phase/fork branches, not just at the top level. */
+export function findStateByName(definition: AslDefinition, name: string): AslState | undefined {
+  return findStateIn(definition.States, name);
+}
+
+function findStateIn(states: Record<string, AslState>, name: string): AslState | undefined {
+  const direct = states[name];
+  if (direct) return direct;
+  for (const state of Object.values(states)) {
+    for (const branch of state.Branches ?? []) {
+      const found = findStateIn(branch.States, name);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}

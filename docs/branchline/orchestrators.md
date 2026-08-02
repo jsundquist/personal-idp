@@ -31,7 +31,7 @@ interface WorkflowOrchestrator {
   cancelInstance(orchestratorInstanceKey: string): Promise<void>;
   completeTask(orchestratorInstanceKey: string, taskId: string, variables?: Record<string, unknown>): Promise<void>;
   skipTask(orchestratorInstanceKey: string, taskId: string, reason: string): Promise<void>;
-  getTaskCandidateGroups(definitionId: string, taskId: string): Promise<string[]>;
+  getTaskCandidateGroups(definitionId: string, taskId: string): Promise<{ groups: string[]; unresolved?: boolean }>;
   getFlownodeProgress(orchestratorInstanceKeys: string[]): Promise<Map<string, { completedPhases: number; totalPhases: number }>>;
   buildHierarchy(definitionId: string, orchestratorInstanceKey: string, actions: TaskActionInput[]): Promise<ParallelBlock[]>;
   buildFlowGraph(definitionId: string, orchestratorInstanceKey: string, actions: TaskActionInput[]): Promise<FlowGraph>;
@@ -50,7 +50,10 @@ interface WorkflowOrchestrator {
 - **`buildFlowGraph` is the one every implementation must support.** It
   produces the orchestrator-agnostic graph the frontend renders (see below).
   `buildHierarchy` produces the older, being-phased-out task-list format; an
-  implementation with no equivalent structure (Step Functions) may return `[]`.
+  implementation with no equivalent structure may return `[]` — Step
+  Functions' `AslHierarchyBuilder.ts` walks the ASL definition the same way
+  `AslAdapter.ts` does for `buildFlowGraph`, just emitting `ParallelBlock[]`
+  instead of graph nodes/edges.
 
 ## The `FlowGraph` target shape
 
@@ -76,23 +79,35 @@ nesting depth.
 Camunda has a native "who can act on this task" concept
 (`zeebe:assignmentDefinition candidateGroups`, see
 [workflow-shape.md](./workflow-shape.md)). Not every orchestrator does — ASL
-has nothing equivalent. When yours doesn't, source it from app-config
-instead, keyed by an array of `(definitionId, taskId) → groups` entries
-rather than nested keys (state/task names can contain characters that aren't
-safe as bare YAML keys):
+has nothing equivalent.
 
-```yaml
-branchline:
-  stepFunctions:
-    candidateGroups:
-      - definitionId: create-backend-api
-        taskId: "Request Architecture Review"
-        groups: [architects]
+Step Functions closes this gap by embedding the same metadata Camunda gets
+from BPMN directly in the ASL definition, as a JSON object in a Task state's
+`Comment` field, instead of a separate app-config mapping an author would
+have to remember to keep in sync by hand:
+
+```json
+"Request Architecture Review": {
+  "Type": "Task",
+  "Comment": "{\"candidateGroups\": [\"architects\"]}",
+  "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+  ...
+}
 ```
 
-This is exactly what `CandidateGroupResolver` in
-branchline-backend-module-step-functions does — use it as the template if
-you're missing this concept in a new engine.
+`TaskCommentMetadata.ts`'s `parseTaskComment` is the parser: the whole
+`Comment` field is either absent/empty, or valid JSON with an optional
+`candidateGroups` array and/or `formKey` string. Anything else — plain
+human text, malformed JSON — is self-serve, matching a BPMN task with no
+`assignmentDefinition` at all. There's no FEEL-style "unresolved,
+deny-by-default" case here: ASL has no dynamic-expression mechanism this
+could fail to statically resolve, so parsing either succeeds (explicit
+gating) or falls back to self-serve.
+
+Use `TaskCommentMetadata.ts` as the template if you're missing this concept
+in a new engine — and prefer embedding metadata in the definition itself over
+a parallel app-config mapping if your format has a free-text field like
+`Comment` to carry it in.
 
 ## The task-token / completion-callback pattern
 

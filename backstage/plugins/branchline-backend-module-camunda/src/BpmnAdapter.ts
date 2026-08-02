@@ -16,6 +16,7 @@
 import { DOMParser } from '@xmldom/xmldom';
 import type { FlowEdge, FlowGraph, FlowNode, FlowNodeType, TaskStatus } from '@internal/backstage-plugin-branchline-common';
 import type { CamundaElementInstance } from './types';
+import { attr, childElements, getDocumentation } from './xmlHelpers';
 
 const TASK_TYPES = new Set([
   'serviceTask',
@@ -24,30 +25,6 @@ const TASK_TYPES = new Set([
   'receiveTask',
   'sendTask',
 ]);
-
-// ── XML helpers ──────────────────────────────────────────────────────────────
-
-function attr(el: Element, name: string): string {
-  return el.getAttribute(name) ?? '';
-}
-
-function childElements(el: Element): Element[] {
-  const out: Element[] = [];
-  for (let i = 0; i < el.childNodes.length; i++) {
-    const n = el.childNodes.item(i);
-    if (n.nodeType === 1) out.push(n as Element);
-  }
-  return out;
-}
-
-function getDocumentation(el: Element): string | undefined {
-  for (const child of childElements(el)) {
-    if (child.localName === 'documentation') {
-      return child.textContent?.trim() || undefined;
-    }
-  }
-  return undefined;
-}
 
 // ── Internal graph structures ────────────────────────────────────────────────
 
@@ -146,7 +123,7 @@ export function bpmnToFlowGraph(
   const stateMap = new Map<string, CamundaElementInstance>();
   for (const inst of instances) {
     const existing = stateMap.get(inst.flowNodeId);
-    if (!existing || inst.key > existing.key) stateMap.set(inst.flowNodeId, inst);
+    if (!existing || BigInt(inst.key) > BigInt(existing.key)) stateMap.set(inst.flowNodeId, inst);
   }
   const actionMap = new Map<string, ActionRecord>();
   for (const a of actions) actionMap.set(a.taskId, a);

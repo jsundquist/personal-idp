@@ -10,18 +10,6 @@ export interface Config {
        * @visibility secret
        */
       callbackToken?: string;
-      /**
-       * Maps ASL state names to the Backstage groups allowed to act on them —
-       * ASL has no native candidateGroups equivalent, so this app-config
-       * mapping is the source of truth instead.
-       */
-      candidateGroups?: Array<{
-        /** The Branchline definitionId — the value of the branchline:definitionId tag on the state machine */
-        definitionId: string;
-        /** The ASL state name (e.g. "Request Architecture Review") */
-        taskId: string;
-        groups: string[];
-      }>;
     };
   };
 }

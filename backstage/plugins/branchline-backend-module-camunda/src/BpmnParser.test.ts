@@ -1,4 +1,5 @@
 import { parseBpmnXml, buildHierarchyFromBpmn } from './BpmnParser';
+import type { CamundaElementInstance } from './types';
 
 const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -57,6 +58,98 @@ describe('BpmnParser candidateGroups', () => {
     // callers deny by default instead of treating it as self-serve.
     expect(byId.dynamic.candidateGroups).toBeUndefined();
     expect(byId.dynamic.candidateGroupsUnresolved).toBe(true);
+  });
+});
+
+describe('BpmnParser candidateUsers', () => {
+  const usersXml = (candidateUsers: string) => `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+  <bpmn:process id="p" isExecutable="true">
+    <bpmn:subProcess id="phase-1" name="Phase 1">
+      <bpmn:startEvent id="s"><bpmn:outgoing>f1</bpmn:outgoing></bpmn:startEvent>
+      <bpmn:userTask id="gated" name="Gated">
+        <bpmn:extensionElements>
+          <zeebe:assignmentDefinition candidateUsers="${candidateUsers}" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>f1</bpmn:incoming>
+        <bpmn:outgoing>f2</bpmn:outgoing>
+      </bpmn:userTask>
+      <bpmn:endEvent id="e"><bpmn:incoming>f2</bpmn:incoming></bpmn:endEvent>
+      <bpmn:sequenceFlow id="f1" sourceRef="s" targetRef="gated" />
+      <bpmn:sequenceFlow id="f2" sourceRef="gated" targetRef="e" />
+    </bpmn:subProcess>
+  </bpmn:process>
+</bpmn:definitions>`;
+
+  it('treats a literal candidateUsers list as unresolved (deny-by-default)', () => {
+    const blocks = buildHierarchyFromBpmn(parseBpmnXml(usersXml('alice,bob')), [], []);
+    const task = blocks.flatMap(b => b.steps.flatMap(s => s.tasks))[0];
+    expect(task.candidateGroups).toBeUndefined();
+    expect(task.candidateGroupsUnresolved).toBe(true);
+  });
+
+  it('treats a FEEL candidateUsers expression as unresolved (deny-by-default)', () => {
+    const blocks = buildHierarchyFromBpmn(parseBpmnXml(usersXml('=someExpr')), [], []);
+    const task = blocks.flatMap(b => b.steps.flatMap(s => s.tasks))[0];
+    expect(task.candidateGroups).toBeUndefined();
+    expect(task.candidateGroupsUnresolved).toBe(true);
+  });
+
+  it('treats candidateUsers as unresolved even when candidateGroups is also literal', () => {
+    const withBoth = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+  <bpmn:process id="p" isExecutable="true">
+    <bpmn:subProcess id="phase-1" name="Phase 1">
+      <bpmn:startEvent id="s"><bpmn:outgoing>f1</bpmn:outgoing></bpmn:startEvent>
+      <bpmn:userTask id="gated" name="Gated">
+        <bpmn:extensionElements>
+          <zeebe:assignmentDefinition candidateUsers="alice" candidateGroups="arb" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>f1</bpmn:incoming>
+        <bpmn:outgoing>f2</bpmn:outgoing>
+      </bpmn:userTask>
+      <bpmn:endEvent id="e"><bpmn:incoming>f2</bpmn:incoming></bpmn:endEvent>
+      <bpmn:sequenceFlow id="f1" sourceRef="s" targetRef="gated" />
+      <bpmn:sequenceFlow id="f2" sourceRef="gated" targetRef="e" />
+    </bpmn:subProcess>
+  </bpmn:process>
+</bpmn:definitions>`;
+    const blocks = buildHierarchyFromBpmn(parseBpmnXml(withBoth), [], []);
+    const task = blocks.flatMap(b => b.steps.flatMap(s => s.tasks))[0];
+    expect(task.candidateGroups).toBeUndefined();
+    expect(task.candidateGroupsUnresolved).toBe(true);
+  });
+});
+
+describe('BpmnParser element instance key ordering', () => {
+  it('picks the numerically latest instance, not the lexically latest', () => {
+    // "9" > "10" lexically but not numerically — a naive string comparison
+    // would pick the wrong (older) instance as "most recent".
+    const instances: CamundaElementInstance[] = [
+      {
+        key: '9',
+        processInstanceKey: 'pi-1',
+        processDefinitionKey: 'pd-1',
+        flowNodeId: 'self',
+        type: 'bpmn:userTask',
+        state: 'COMPLETED',
+      },
+      {
+        key: '10',
+        processInstanceKey: 'pi-1',
+        processDefinitionKey: 'pd-1',
+        flowNodeId: 'self',
+        type: 'bpmn:userTask',
+        state: 'ACTIVE',
+      },
+    ];
+    const blocks = buildHierarchyFromBpmn(parseBpmnXml(xml), instances, []);
+    const tasks = blocks.flatMap(b => b.steps.flatMap(s => s.tasks));
+    const byId = Object.fromEntries(tasks.map(t => [t.id, t]));
+
+    expect(byId.self.status).toBe('active');
   });
 });
 

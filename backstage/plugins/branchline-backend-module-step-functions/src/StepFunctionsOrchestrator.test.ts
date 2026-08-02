@@ -160,16 +160,33 @@ describe('StepFunctionsOrchestrator', () => {
     expect(output).toEqual({ branchlineSkipped: true, branchlineSkipReason: 'not applicable' });
   });
 
-  it('getTaskCandidateGroups delegates to app-config-driven resolution', async () => {
-    const orchestrator = await buildOrchestrator({
-      branchline: {
-        stepFunctions: {
-          candidateGroups: [
-            { definitionId: 'create-backend-api', taskId: 'Request Architecture Review', groups: ['architects'] },
+  it('getTaskCandidateGroups reads candidateGroups embedded in the task Comment', async () => {
+    const definition = JSON.stringify({
+      StartAt: 'Phase 1',
+      States: {
+        'Phase 1': {
+          Type: 'Parallel',
+          Branches: [
+            {
+              StartAt: 'Request Architecture Review',
+              States: {
+                'Request Architecture Review': {
+                  Type: 'Task',
+                  Comment: JSON.stringify({ candidateGroups: ['architects'] }),
+                  End: true,
+                },
+              },
+            },
           ],
+          End: true,
         },
       },
     });
+    sfnMock.on(ListStateMachinesCommand).resolves(taggedListStateMachinesResponse());
+    sfnMock.on(ListTagsForResourceCommand).resolves(taggedTagsResponse());
+    sfnMock.on(DescribeStateMachineCommand).resolves({ definition });
+
+    const orchestrator = await buildOrchestrator();
     expect(
       await orchestrator.getTaskCandidateGroups('create-backend-api', 'Request Architecture Review'),
     ).toEqual({ groups: ['architects'], unresolved: false });
@@ -179,7 +196,39 @@ describe('StepFunctionsOrchestrator', () => {
     });
   });
 
-  it('buildHierarchy returns [] (no ASL equivalent of the legacy hierarchy)', async () => {
+  it('buildHierarchy walks the ASL definition into a ParallelBlock hierarchy', async () => {
+    const definition = fs.readFileSync(
+      path.join(__dirname, '__fixtures__', 'create-backend-service-simple-aws.json'),
+      'utf8',
+    );
+    sfnMock.on(DescribeExecutionCommand).resolves({ stateMachineArn: STATE_MACHINE_ARN });
+    sfnMock.on(DescribeStateMachineCommand).resolves({ definition });
+    sfnMock.on(GetExecutionHistoryCommand).resolves({
+      events: [
+        {
+          type: 'TaskStateEntered',
+          id: 1,
+          previousEventId: 0,
+          timestamp: new Date('2026-01-01T00:00:00.000Z'),
+          stateEnteredEventDetails: { name: 'Build Application' },
+        },
+      ],
+    });
+
+    const orchestrator = await buildOrchestrator();
+    const blocks = await orchestrator.buildHierarchy('create-backend-service-simple', 'exec-1', []);
+
+    expect(blocks.map(b => b.id)).toEqual([
+      'Phase 1: Initialize Reviews',
+      'Phase 2: Build Application',
+      'Phase 3: Complete Application',
+    ]);
+    const phase2Tasks = blocks[1].steps.flatMap(s => s.tasks);
+    expect(phase2Tasks.find(t => t.id === 'Build Application')).toMatchObject({ status: 'active' });
+  });
+
+  it('buildHierarchy returns [] when the execution has no state machine ARN', async () => {
+    sfnMock.on(DescribeExecutionCommand).resolves({});
     const orchestrator = await buildOrchestrator();
     expect(await orchestrator.buildHierarchy('create-backend-api', 'exec-1', [])).toEqual([]);
   });

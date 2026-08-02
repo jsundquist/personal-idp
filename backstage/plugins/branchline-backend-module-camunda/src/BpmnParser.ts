@@ -1,6 +1,7 @@
 import { DOMParser } from '@xmldom/xmldom';
 import { CamundaElementInstance } from './types';
 import { ParallelBlock, Step, Task, TaskStatus } from '@internal/backstage-plugin-branchline-common';
+import { attr, childElements, getDocumentation } from './xmlHelpers';
 
 const TASK_TYPES = new Set(['serviceTask', 'userTask', 'manualTask', 'receiveTask', 'sendTask']);
 
@@ -37,39 +38,22 @@ interface PhaseSpec {
   stepSpecs: StepSpec[];
 }
 
-function attr(el: Element, name: string): string {
-  return el.getAttribute(name) ?? '';
-}
-
-function childElements(el: Element): Element[] {
-  const result: Element[] = [];
-  for (let i = 0; i < el.childNodes.length; i++) {
-    const node = el.childNodes.item(i);
-    if (node.nodeType === 1) result.push(node as Element);
-  }
-  return result;
-}
-
-function getDocumentation(el: Element): string | undefined {
-  for (const child of childElements(el)) {
-    if (child.localName === 'documentation') {
-      return child.textContent?.trim() || undefined;
-    }
-  }
-  return undefined;
-}
-
 /**
  * Read literal candidateGroups from a task's zeebe:assignmentDefinition.
  * FEEL expression values (starting with '=') are dynamically resolved by the
  * engine at runtime and cannot be read statically — callers must treat these
- * as deny-by-default (see `unresolved`), not as "no restriction".
+ * as deny-by-default (see `unresolved`), not as "no restriction". The same
+ * treatment applies to `candidateUsers`: Branchline has no per-user
+ * enforcement mechanism, so any task gated by it (literal or FEEL) must deny
+ * by default rather than silently falling through to candidateGroups/self-serve.
  */
 function getCandidateGroups(el: Element): { groups?: string[]; unresolved?: boolean } {
   for (const child of childElements(el)) {
     if (child.localName !== 'extensionElements') continue;
     for (const ext of childElements(child)) {
       if (ext.localName !== 'assignmentDefinition') continue;
+      const rawUsers = ext.getAttribute('candidateUsers') ?? '';
+      if (rawUsers.trim()) return { unresolved: true };
       const raw = ext.getAttribute('candidateGroups') ?? '';
       if (!raw) return {};
       if (raw.trim().startsWith('=')) return { unresolved: true };
@@ -277,7 +261,7 @@ export function buildHierarchyFromBpmn(
   const stateMap = new Map<string, CamundaElementInstance>();
   for (const inst of instances) {
     const existing = stateMap.get(inst.flowNodeId);
-    if (!existing || inst.key > existing.key) {
+    if (!existing || BigInt(inst.key) > BigInt(existing.key)) {
       stateMap.set(inst.flowNodeId, inst);
     }
   }

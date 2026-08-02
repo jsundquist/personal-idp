@@ -1,7 +1,7 @@
 import { renderInTestApp, TestApiProvider } from '@backstage/frontend-test-utils';
 import { permissionApiRef } from '@backstage/plugin-permission-react';
 import { AuthorizeResult } from '@backstage/plugin-permission-common';
-import { screen } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { branchlineApiRef } from '../../api/BranchlineApi';
 import { taskFormRegistryApiRef } from '../../taskForms/taskFormRegistryApiRef';

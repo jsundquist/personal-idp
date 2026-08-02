@@ -24,8 +24,9 @@ import type {
   WorkflowOrchestrator,
 } from '@internal/backstage-plugin-branchline-node';
 import { aslToFlowGraph, AslActionRecord } from './AslAdapter';
-import { AslDefinition, listPhaseNames, parseAslDefinition } from './AslDefinition';
-import { CandidateGroupResolver } from './CandidateGroupResolver';
+import { AslHierarchyActionRecord, buildHierarchyFromAsl } from './AslHierarchyBuilder';
+import { AslDefinition, findStateByName, listPhaseNames, parseAslDefinition } from './AslDefinition';
+import { parseTaskComment } from './TaskCommentMetadata';
 import { TaskTokenStore } from './TaskTokenStore';
 
 const DEFINITION_ID_TAG = 'branchline:definitionId';
@@ -40,7 +41,7 @@ interface TaggedStateMachine {
 
 export class StepFunctionsOrchestrator implements WorkflowOrchestrator {
   private readonly client: SFNClient;
-  private readonly candidateGroups: CandidateGroupResolver;
+  private readonly definitionCache = new Map<string, AslDefinition>();
 
   constructor(
     config: Config,
@@ -50,7 +51,6 @@ export class StepFunctionsOrchestrator implements WorkflowOrchestrator {
     this.client = new SFNClient({
       region: sfnConfig?.getOptionalString('region'),
     });
-    this.candidateGroups = new CandidateGroupResolver(config);
   }
 
   private async listTaggedStateMachines(): Promise<TaggedStateMachine[]> {
@@ -142,17 +142,25 @@ export class StepFunctionsOrchestrator implements WorkflowOrchestrator {
     definitionId: string,
     taskId: string,
   ): Promise<{ groups: string[]; unresolved?: boolean }> {
-    return { groups: this.candidateGroups.resolve(definitionId, taskId), unresolved: false };
+    const stateMachineArn = await this.resolveStateMachineArn(definitionId);
+    const definition = await this.fetchDefinition(stateMachineArn);
+    const state = findStateByName(definition, taskId);
+    const { candidateGroups } = parseTaskComment(state?.Comment);
+    return { groups: candidateGroups, unresolved: false };
   }
 
   private async fetchDefinition(stateMachineArn: string): Promise<AslDefinition> {
+    const cached = this.definitionCache.get(stateMachineArn);
+    if (cached) return cached;
     const res = await this.client.send(
       new DescribeStateMachineCommand({ stateMachineArn }),
     );
     if (!res.definition) {
       throw new Error(`DescribeStateMachine for '${stateMachineArn}' returned no definition`);
     }
-    return parseAslDefinition(res.definition);
+    const definition = parseAslDefinition(res.definition);
+    this.definitionCache.set(stateMachineArn, definition);
+    return definition;
   }
 
   /** Derive a per-state-name status from the execution's history events.
@@ -215,14 +223,30 @@ export class StepFunctionsOrchestrator implements WorkflowOrchestrator {
     return new Map(results.map(r => [r.key, { completedPhases: r.completedPhases, totalPhases: r.totalPhases }]));
   }
 
-  // Legacy task-list hierarchy has no ASL equivalent (candidateGroups/formKey
-  // are BPMN-taskHeader-sourced); Step Functions supports flowGraph only.
   async buildHierarchy(
     _definitionId: string,
-    _orchestratorInstanceKey: string,
-    _actions: TaskActionInput[],
+    orchestratorInstanceKey: string,
+    actions: TaskActionInput[],
   ): Promise<ParallelBlock[]> {
-    return [];
+    const exec = await this.client.send(
+      new DescribeExecutionCommand({ executionArn: orchestratorInstanceKey }),
+    );
+    if (!exec.stateMachineArn) {
+      return [];
+    }
+    const [definition, history] = await Promise.all([
+      this.fetchDefinition(exec.stateMachineArn),
+      this.fetchHistory(orchestratorInstanceKey),
+    ]);
+    const status = this.statusFromHistory(history);
+    const actionRecords: AslHierarchyActionRecord[] = actions.map(a => ({
+      taskId: a.taskId,
+      action: a.action,
+      actor: a.actor,
+      occurredAt: a.occurredAt,
+      skipReason: a.skipReason,
+    }));
+    return buildHierarchyFromAsl(definition, status, actionRecords);
   }
 
   async buildFlowGraph(

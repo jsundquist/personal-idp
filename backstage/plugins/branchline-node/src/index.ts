@@ -71,7 +71,7 @@ export interface WorkflowOrchestrator {
   ): Promise<Map<string, { completedPhases: number; totalPhases: number }>>;
 
   /** Legacy task-list hierarchy. Orchestrators without an equivalent structure
-   *  (e.g. Step Functions) may return []. */
+   *  may return []. */
   buildHierarchy(
     definitionId: string,
     orchestratorInstanceKey: string,

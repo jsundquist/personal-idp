@@ -61,6 +61,16 @@ export class BranchlineDatabase {
     return this.rowToInstance(row);
   }
 
+  /** Batch lookup by id — returns results in `ids` order, `undefined` for any
+   *  id with no matching row (mirrors `getInstance`'s per-id "not found"
+   *  case, but as one query instead of one per id). */
+  async getInstances(ids: string[]): Promise<Array<WorkflowInstance | undefined>> {
+    if (ids.length === 0) return [];
+    const rows = await this.db('workflow_instances').whereIn('id', ids);
+    const byId = new Map(rows.map(r => [r.id as string, this.rowToInstance(r)]));
+    return ids.map(id => byId.get(id));
+  }
+
   async getInstanceByOrchestratorKey(orchestratorInstanceKey: string): Promise<WorkflowInstance> {
     const row = await this.db('workflow_instances')
       .where({ orchestrator_instance_key: orchestratorInstanceKey })

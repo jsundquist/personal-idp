@@ -86,6 +86,19 @@ export function createRouter(opts: {
     return credentials.principal.userEntityRef;
   }
 
+  // Shared membership predicate: is a task with these candidate groups (and
+  // resolvability) actable by a user in `userShort`? Used both to enforce
+  // the gate (assertCanActOnTask, below) and to compute the display-only
+  // `canAct` field in GET /workflows/:id — kept as one function so the two
+  // can't drift out of sync.
+  function canActOnTask(
+    groups: string[],
+    unresolved: boolean | undefined,
+    userShort: Set<string>,
+  ): boolean {
+    return !unresolved && (groups.length === 0 || groups.some(g => userShort.has(shortGroupName(g))));
+  }
+
   // Enforce the task's candidate groups: a task with candidate groups can
   // only be acted on by a member of one of them; an ungrouped task is self-serve.
   // Returns whether the task was gated, so callers can decide whether it's safe
@@ -107,7 +120,7 @@ export function createRouter(opts: {
     }
     const userGroups = await membership.getGroupsForUser(userEntityRef);
     const userShort = new Set(userGroups.map(shortGroupName));
-    if (!groups.some(g => userShort.has(shortGroupName(g)))) {
+    if (!canActOnTask(groups, false, userShort)) {
       throw new NotAllowedError(
         `This task is restricted to members of: ${groups.join(', ')}`,
       );
@@ -278,10 +291,7 @@ export function createRouter(opts: {
       for (const block of parallelBlocks) {
         for (const step of block.steps) {
           for (const task of step.tasks) {
-            const groups = task.candidateGroups ?? [];
-            task.canAct =
-              !task.candidateGroupsUnresolved &&
-              (groups.length === 0 || groups.some(g => userShort.has(shortGroupName(g))));
+            task.canAct = canActOnTask(task.candidateGroups ?? [], task.candidateGroupsUnresolved, userShort);
           }
         }
       }
@@ -309,15 +319,7 @@ export function createRouter(opts: {
 
   // POST /workflows/:id/cancel
   router.post('/workflows/:id/cancel', async (req, res) => {
-    const credentials = await httpAuth.credentials(req, { allow: ['user'] });
-
-    const [decision] = await permissions.authorize(
-      [{ permission: branchlineWorkflowActPermission, resourceRef: req.params.id }],
-      { credentials },
-    );
-    if (decision.result !== AuthorizeResult.ALLOW) {
-      throw new NotAllowedError('You do not have permission to cancel this workflow');
-    }
+    await authorizeAct(req, req.params.id, 'You do not have permission to cancel this workflow');
 
     const instance = await db.getInstance(req.params.id);
 
@@ -342,18 +344,17 @@ export function createRouter(opts: {
       throw new InputError(parsed.error.toString());
     }
 
-    const credentials = await httpAuth.credentials(req, { allow: ['user'] });
-    const userEntityRef = credentials.principal.userEntityRef;
-
-    const [decision] = await permissions.authorize(
-      [{ permission: branchlineWorkflowActPermission, resourceRef: req.params.id }],
-      { credentials },
+    const userEntityRef = await authorizeAct(
+      req,
+      req.params.id,
+      'You do not have permission to complete tasks on this workflow',
     );
-    if (decision.result !== AuthorizeResult.ALLOW) {
-      throw new NotAllowedError('You do not have permission to complete tasks on this workflow');
-    }
 
     const instance = await db.getInstance(req.params.id);
+
+    if (instance.status !== 'active') {
+      throw new InputError(`Workflow is ${instance.status} and no longer accepts task actions`);
+    }
 
     // Per-task team gate: only members of the task's candidateGroups may act.
     const { gated } = await assertCanActOnTask(userEntityRef, instance.definitionId, req.params.taskId);
@@ -399,18 +400,17 @@ export function createRouter(opts: {
       throw new InputError(parsed.error.toString());
     }
 
-    const credentials = await httpAuth.credentials(req, { allow: ['user'] });
-    const userEntityRef = credentials.principal.userEntityRef;
-
-    const [decision] = await permissions.authorize(
-      [{ permission: branchlineWorkflowActPermission, resourceRef: req.params.id }],
-      { credentials },
+    const userEntityRef = await authorizeAct(
+      req,
+      req.params.id,
+      'You do not have permission to skip tasks on this workflow',
     );
-    if (decision.result !== AuthorizeResult.ALLOW) {
-      throw new NotAllowedError('You do not have permission to skip tasks on this workflow');
-    }
 
     const instance = await db.getInstance(req.params.id);
+
+    if (instance.status !== 'active') {
+      throw new InputError(`Workflow is ${instance.status} and no longer accepts task actions`);
+    }
 
     // Per-task team gate: only members of the task's candidateGroups may act.
     await assertCanActOnTask(userEntityRef, instance.definitionId, req.params.taskId);
@@ -439,8 +439,10 @@ export function createRouter(opts: {
 
   // GET /workflows/:id/tasks/:taskId/feedback — list items + counts for a task
   router.get('/workflows/:id/tasks/:taskId/feedback', async (req, res) => {
-    // Any authenticated user who can view the workflow may read feedback.
-    await httpAuth.credentials(req, { allow: ['user'] });
+    // Only members of the task's candidate group (or anyone, for a self-serve task) may read its feedback.
+    const credentials = await httpAuth.credentials(req, { allow: ['user'] });
+    const instance = await db.getInstance(req.params.id);
+    await assertCanActOnTask(credentials.principal.userEntityRef, instance.definitionId, req.params.taskId);
     const [items, counts] = await Promise.all([
       db.listFeedbackForTask(req.params.id, req.params.taskId),
       db.feedbackCountsForTask(req.params.id, req.params.taskId),

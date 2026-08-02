@@ -474,29 +474,42 @@ export function WorkflowDetailPage() {
     return desc.length > DESCRIPTION_THRESHOLD ? `${desc.slice(0, DESCRIPTION_THRESHOLD).trimEnd()}…` : desc;
   }, [workflow?.description]);
   const pollRef = useRef<ReturnType<typeof setInterval>>();
-  const initializedRef = useRef(false);
+  const workflowRef = useRef<WorkflowInstance | null>(null);
+  const hasSelectedInitialBlock = useRef(false);
 
-  const fetchWorkflow = async () => {
-    if (!workflowId) return;
+  const fetchWorkflow = async (): Promise<WorkflowInstance | undefined> => {
+    if (!workflowId) return undefined;
     try {
       const data = await api.getWorkflowInstance(workflowId);
-      setWorkflow(prev => {
-        if (!initializedRef.current) {
-          initializedRef.current = true;
-          const blocks = data.parallelBlocks ?? [];
-          const firstActive =
-            blocks.find(b => derivePhaseStatus(b) === 'active') ?? blocks[0];
-          setExpandedBlockId(firstActive?.id ?? '');
-        }
-        return prev !== null ? { ...data } : data;
-      });
+      setWorkflow(data);
       if (data.status !== 'active') {
         clearInterval(pollRef.current);
       }
+      return data;
     } catch (err) {
       setError((err as Error).message);
+      return undefined;
     }
   };
+
+  // Keep a ref mirror of the latest workflow so the visibility-change
+  // listener (registered once below) can read current status without
+  // needing `workflow` in its effect's dependency array.
+  useEffect(() => {
+    workflowRef.current = workflow;
+  }, [workflow]);
+
+  // Auto-expand the first active phase, once, the first time the workflow
+  // loads. Runs as a plain effect rather than a side effect nested inside
+  // the fetch's state updater.
+  useEffect(() => {
+    if (workflow && !hasSelectedInitialBlock.current) {
+      hasSelectedInitialBlock.current = true;
+      const blocks = workflow.parallelBlocks ?? [];
+      const firstActive = blocks.find(b => derivePhaseStatus(b) === 'active') ?? blocks[0];
+      setExpandedBlockId(firstActive?.id ?? '');
+    }
+  }, [workflow]);
 
   useEffect(() => {
     fetchWorkflow();
@@ -505,13 +518,8 @@ export function WorkflowDetailPage() {
     const handleVisibilityChange = () => {
       if (document.hidden) {
         clearInterval(pollRef.current);
-      } else {
-        setWorkflow(prev => {
-          if (prev?.status === 'active') {
-            pollRef.current = setInterval(fetchWorkflow, 10_000);
-          }
-          return prev;
-        });
+      } else if (workflowRef.current?.status === 'active') {
+        pollRef.current = setInterval(fetchWorkflow, 10_000);
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -529,46 +537,25 @@ export function WorkflowDetailPage() {
       .catch(() => { /* silently ignore — this panel is non-critical */ });
   }, [workflow?.entityRef, workflowId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const advanceToNextPhaseIfComplete = (taskId: string, patch: Partial<Task>) => {
-    setWorkflow(prev => {
-      if (!prev) return prev;
-      const updatedBlocks = prev.parallelBlocks?.map(block => ({
-        ...block,
-        steps: block.steps.map(step => ({
-          ...step,
-          tasks: step.tasks.map(t => (t.id === taskId ? { ...t, ...patch } : t)),
-        })),
-      }));
-      if (!updatedBlocks) return prev;
-
-      // Find the block that contains this task and check if it's now fully done
-      const affectedBlock = updatedBlocks.find(b =>
-        b.steps.some(s => s.tasks.some(t => t.id === taskId)),
-      );
-      if (affectedBlock) {
-        const allTasks = affectedBlock.steps.flatMap(s => s.tasks);
-        const allDone = allTasks.every(
-          t => t.status === 'completed' || t.status === 'skipped' || t.status === 'not-taken',
-        );
-        if (allDone) {
-          const currentIdx = updatedBlocks.findIndex(b => b.id === affectedBlock.id);
-          const next = updatedBlocks[currentIdx + 1];
-          if (next) {
-            setExpandedBlockId(next.id);
-          }
-        }
-      }
-
-      return { ...prev, parallelBlocks: updatedBlocks };
-    });
+  // If the currently-expanded phase is now fully done (per the server's
+  // freshly-fetched state), advance the accordion to the next phase. Reuses
+  // the same "is this phase done" logic (derivePhaseStatus) the server's own
+  // auto-complete check and the initial-block-selection effect above use,
+  // rather than re-deriving completion client-side from an optimistic patch.
+  const advanceToNextPhaseIfComplete = (data: WorkflowInstance) => {
+    const blocks = data.parallelBlocks ?? [];
+    const currentIdx = blocks.findIndex(b => b.id === expandedBlockId);
+    if (currentIdx === -1 || derivePhaseStatus(blocks[currentIdx]) !== 'completed') return;
+    const next = blocks[currentIdx + 1];
+    if (next) setExpandedBlockId(next.id);
   };
 
   const handleComplete = async (taskId: string) => {
     if (!workflow) return;
     try {
       await api.completeTask(workflow.id, taskId);
-      advanceToNextPhaseIfComplete(taskId, { status: 'completed' });
-      fetchWorkflow();
+      const data = await fetchWorkflow();
+      if (data) advanceToNextPhaseIfComplete(data);
     } catch (err) {
       setError((err as Error).message ?? 'Failed to complete task');
     }
@@ -578,8 +565,8 @@ export function WorkflowDetailPage() {
     if (!workflow) return;
     try {
       await api.skipTask(workflow.id, taskId, reason);
-      advanceToNextPhaseIfComplete(taskId, { status: 'skipped' });
-      fetchWorkflow();
+      const data = await fetchWorkflow();
+      if (data) advanceToNextPhaseIfComplete(data);
     } catch (err) {
       setError((err as Error).message ?? 'Failed to skip task');
     }

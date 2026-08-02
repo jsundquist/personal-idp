@@ -142,6 +142,32 @@ describe('createRouter', () => {
       expect(res.body.items).toHaveLength(1);
     });
 
+    it('GET feedback is denied for a non-member of the task candidate group', async () => {
+      const { app } = buildApp({
+        orchestrator: {
+          getTaskCandidateGroups: jest.fn().mockResolvedValue({ groups: ['arb'], unresolved: false }),
+        },
+        membership: {
+          getGroupsForUser: jest.fn().mockResolvedValue(['group:default/other-team']),
+        },
+      });
+      const res = await request(app).get('/workflows/wf-1/tasks/arch-review/feedback');
+      expect(res.status).toBe(403);
+    });
+
+    it('GET feedback allows a member of the task candidate group', async () => {
+      const { app } = buildApp({
+        orchestrator: {
+          getTaskCandidateGroups: jest.fn().mockResolvedValue({ groups: ['arb'], unresolved: false }),
+        },
+        membership: {
+          getGroupsForUser: jest.fn().mockResolvedValue(['group:default/arb']),
+        },
+      });
+      const res = await request(app).get('/workflows/wf-1/tasks/arch-review/feedback');
+      expect(res.status).toBe(200);
+    });
+
     it('POST comment succeeds for any authenticated user', async () => {
       const { app, db } = buildApp({ permissions: denyPermissions() });
       const res = await request(app)
@@ -213,6 +239,42 @@ describe('createRouter', () => {
       expect(db.recordAction).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'completed', taskId: 'gate-arch' }),
       );
+    });
+  });
+
+  describe('finalized workflow guard', () => {
+    it.each(['completed', 'cancelled', 'failed'])(
+      'rejects complete when the workflow is %s',
+      async status => {
+        const { app, db } = buildApp({
+          db: { getInstance: jest.fn().mockResolvedValue({ ...INSTANCE, status }) },
+        });
+        const res = await request(app).post('/workflows/wf-1/tasks/gate-arch/complete');
+        expect(res.status).toBe(400);
+        expect(db.recordAction).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['completed', 'cancelled', 'failed'])(
+      'rejects skip when the workflow is %s',
+      async status => {
+        const { app, db } = buildApp({
+          db: { getInstance: jest.fn().mockResolvedValue({ ...INSTANCE, status }) },
+        });
+        const res = await request(app)
+          .post('/workflows/wf-1/tasks/gate-arch/skip')
+          .send({ reason: 'no longer needed' });
+        expect(res.status).toBe(400);
+        expect(db.recordAction).not.toHaveBeenCalled();
+      },
+    );
+
+    it('allows skip when the workflow is active', async () => {
+      const { app } = buildApp();
+      const res = await request(app)
+        .post('/workflows/wf-1/tasks/gate-arch/skip')
+        .send({ reason: 'no longer needed' });
+      expect(res.status).toBe(200);
     });
   });
 
@@ -430,6 +492,25 @@ describe('createRouter', () => {
       expect(byId['arch-review'].canAct).toBe(false); // not in arb
       expect(byId.submit.canAct).toBe(true); // ungrouped self-serve
       expect(byId['dynamic-review'].canAct).toBe(false); // unresolved (FEEL) — deny by default
+    });
+  });
+
+  describe('check ordering: auth before per-task gate', () => {
+    it('rejects with the auth failure, not the per-task gate failure, when both would fail', async () => {
+      const { app, db } = buildApp({
+        permissions: denyPermissions(),
+        orchestrator: {
+          getTaskCandidateGroups: jest.fn().mockResolvedValue({ groups: ['arb'], unresolved: false }),
+        },
+        membership: {
+          getGroupsForUser: jest.fn().mockResolvedValue(['group:default/developers']),
+        },
+      });
+      const res = await request(app).post('/workflows/wf-1/tasks/arch-review/complete');
+      expect(res.status).toBe(403);
+      expect(res.body.error.message).toBe('You do not have permission to complete tasks on this workflow');
+      // The per-task gate must never even be consulted once auth has failed.
+      expect(db.getInstance).not.toHaveBeenCalled();
     });
   });
 });

@@ -2,7 +2,16 @@ import { AuthService } from '@backstage/backend-plugin-api';
 import { CatalogApi } from '@backstage/catalog-client';
 import { GroupEntity, UserEntity } from '@backstage/catalog-model';
 
+interface CachedGroups {
+  groups: string[];
+  expiresAt: number;
+}
+
+const GROUPS_CACHE_TTL_MS = 60_000;
+
 export class GroupMembershipChecker {
+  private readonly groupsCache = new Map<string, CachedGroups>();
+
   constructor(
     private readonly catalog: CatalogApi,
     private readonly auth: AuthService,
@@ -28,14 +37,22 @@ export class GroupMembershipChecker {
   }
 
   async getGroupsForUser(userEntityRef: string): Promise<string[]> {
+    const cached = this.groupsCache.get(userEntityRef);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.groups;
+    }
+
     const { token } = await this.auth.getPluginRequestToken({
       onBehalfOf: await this.auth.getOwnServiceCredentials(),
       targetPluginId: 'catalog',
     });
     const userEntity = await this.catalog.getEntityByRef(userEntityRef, { token });
-    if (!userEntity) return [];
-    const memberOf: string[] = (userEntity as UserEntity).spec?.memberOf ?? [];
-    return memberOf.map(g => (g.includes(':') ? g : `group:default/${g}`));
+    const memberOf: string[] = userEntity
+      ? ((userEntity as UserEntity).spec?.memberOf ?? []).map(g => (g.includes(':') ? g : `group:default/${g}`))
+      : [];
+
+    this.groupsCache.set(userEntityRef, { groups: memberOf, expiresAt: Date.now() + GROUPS_CACHE_TTL_MS });
+    return memberOf;
   }
 
   private normalizeRef(ref: string): string {
